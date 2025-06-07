@@ -1,0 +1,62 @@
+{
+  "firestore": {
+    "database": "(default)",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    },
+    {
+      "source": "tournament-functions",
+      "codebase": "minute-madness-functions",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ],
+  "emulators": {
+    "singleProjectMode": true
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "minutemadness-1619e",
+          "appId": "1:68745942725:android:7de97c184e7a1e9ea182ac",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "minutemadness-1619e",
+          "appId": "1:68745942725:ios:8073649f8b023340a182ac",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "minutemadness-1619e",
+          "configurations": {
+            "android": "1:68745942725:android:7de97c184e7a1e9ea182ac",
+            "ios": "1:68745942725:ios:8073649f8b023340a182ac"
+          }
+        }
+      }
+    }
+  }
+}
