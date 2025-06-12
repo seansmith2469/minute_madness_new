@@ -6,6 +6,7 @@ import '../main.dart' show psychedelicPalette, backgroundSwapDuration;
 import 'duration_select_screen.dart';
 import 'memory_select_screen.dart';
 import 'match_select_screen.dart';
+import 'momentum_select_screen.dart';
 
 class GameSelectionScreen extends StatefulWidget {
   const GameSelectionScreen({super.key});
@@ -200,6 +201,19 @@ class _GameSelectionScreenState extends State<GameSelectionScreen>
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(builder: (_) => const MatchSelectScreen()),
+                            ),
+                            isComingSoon: false,
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          _GameModeCard(
+                            title: 'MOMENTUM MADNESS',
+                            subtitle: 'Momentum Building Challenge',
+                            description: 'Spin a wheel as it gets progressively faster',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const MomentumSelectScreen()),
                             ),
                             isComingSoon: false,
                           ),
@@ -571,6 +585,8 @@ class _GameModeCardState extends State<_GameModeCard>
         return Icons.psychology;
       case 'match madness':
         return Icons.gps_fixed; // Use gps_fixed instead of target
+      case 'momentum madness':
+        return Icons.rotate_right;
       default:
         return Icons.games;
     }
