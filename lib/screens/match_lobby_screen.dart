@@ -899,7 +899,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                               ),
                             ),
                             child: Text(
-                              'Card matchers joining the mystical tournament...',
+                              'Players joining tournament...',
                               style: GoogleFonts.chicle(
                                 fontSize: 16,
                                 color: Colors.white.withOpacity(textOpacity),

@@ -901,7 +901,7 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
                               ),
                             ),
                             child: Text(
-                              'Memory warriors joining the mental battle...',
+                              'Players joining tournament...',
                               style: GoogleFonts.chicle(
                                 fontSize: 16,
                                 color: Colors.white.withOpacity(textOpacity),
