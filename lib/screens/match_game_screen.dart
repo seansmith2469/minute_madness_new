@@ -684,14 +684,11 @@ class _MatchGameScreenState extends State<MatchGameScreen>
                       ],
                     ),
 
-                    // Replace the feedback message section in your build method
-// Find this part in your Column and replace it:
-
                     const SizedBox(height: 20),
 
 // FIXED: Always reserve space for feedback message to prevent layout shifts
                     Container(
-                      height: 60, // Fixed height - always reserves this space
+                      height: 80, // Fixed height - always reserves this space
                       margin: const EdgeInsets.symmetric(horizontal: 30),
                       child: _showFeedbackMessage
                           ? AnimatedBuilder(

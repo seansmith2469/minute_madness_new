@@ -80,16 +80,12 @@ class MemoryBotPlayer {
     switch (difficulty) {
       case MemoryBotDifficulty.poor:
         multiplier = 1.3 + (random.nextDouble() * 0.4); // 1.3-1.7x slower
-        break;
       case MemoryBotDifficulty.average:
         multiplier = 1.0 + (random.nextDouble() * 0.3); // 1.0-1.3x
-        break;
       case MemoryBotDifficulty.good:
         multiplier = 0.8 + (random.nextDouble() * 0.3); // 0.8-1.1x
-        break;
       case MemoryBotDifficulty.excellent:
         multiplier = 0.6 + (random.nextDouble() * 0.3); // 0.6-0.9x faster
-        break;
     }
 
     return (baseTime * multiplier * level).round();
@@ -192,7 +188,7 @@ class MemoryBotService {
     return bots;
   }
 
-  // FIXED: Submit bot results for memory tournament (single submission per bot)
+  // Submit bot results for memory tournament (single submission per bot)
   static Future<void> submitBotResults(
       String tourneyId,
       List<MemoryBotPlayer> bots,
@@ -203,9 +199,6 @@ class MemoryBotService {
     for (int i = 0; i < bots.length; i++) {
       final bot = bots[i];
       final level = bot.generateMemoryLevel();
-
-      // FIXED: Calculate completion time once and reuse it
-      final completionTimeMs = bot.generateCompletionTime(level);
 
       // Realistic submission delays (1-5 seconds, spread out)
       final delay = 1000 + (i * 200) + _random.nextInt(2000);
@@ -233,13 +226,12 @@ class MemoryBotService {
               .set({
             'uid': bot.id,
             'level': level,
-            'completionTimeMs': completionTimeMs, // FIXED: Use the same calculated value
+            'completionTimeMs': bot.generateCompletionTime(level), // ADDED: Bot completion time
             'submittedAt': FieldValue.serverTimestamp(),
             'isBot': true,
           });
 
-          // FIXED: Use the same completionTimeMs value in the log
-          print('🧠 Memory bot ${bot.name} (${bot.difficulty.name}) reached level $level in ${completionTimeMs}ms');
+          print('🧠 Memory bot ${bot.name} (${bot.difficulty.name}) reached level $level in ${bot.generateCompletionTime(level)}ms');
         } catch (e) {
           print('🧠 Error submitting memory bot result: $e');
         }
