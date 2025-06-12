@@ -862,21 +862,55 @@ class _MatchGameScreenState extends State<MatchGameScreen>
   }
 
   Widget _buildCardGrid() {
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: GridView.builder(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 4,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          childAspectRatio: 0.7,
-        ),
-        itemCount: _cards.length,
-        itemBuilder: (context, index) {
-          final card = _cards[index];
-          return _buildTarotCard(card);
-        },
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calculate optimal card size based on screen dimensions
+        final screenWidth = constraints.maxWidth;
+        final screenHeight = constraints.maxHeight;
+
+        // Reserve space for padding (40px total horizontal, 20px total vertical)
+        final availableWidth = screenWidth - 40;
+        final availableHeight = screenHeight - 20;
+
+        // Calculate card size that fits all 16 cards in 4x4 grid
+        final cardWidth = (availableWidth - (3 * 8)) / 4; // 3 gaps of 8px between 4 cards
+        final cardHeight = (availableHeight - (3 * 8)) / 4; // 3 gaps of 8px between 4 rows
+
+        // Use the smaller dimension to ensure cards fit and maintain aspect ratio
+        final cardSize = math.min(cardWidth, cardHeight);
+
+        // Ensure minimum size for usability
+        final finalCardSize = math.max(cardSize, 60.0);
+
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Center(
+            child: SizedBox(
+              width: (finalCardSize * 4) + (3 * 8), // 4 cards + 3 gaps
+              height: (finalCardSize * 4) + (3 * 8), // 4 rows + 3 gaps
+              child: GridView.builder(
+                physics: const NeverScrollableScrollPhysics(), // Prevent scrolling
+                shrinkWrap: true,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 1.0, // Square cards
+                ),
+                itemCount: _cards.length,
+                itemBuilder: (context, index) {
+                  final card = _cards[index];
+                  return SizedBox(
+                    width: finalCardSize,
+                    height: finalCardSize,
+                    child: _buildTarotCard(card),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -894,25 +928,25 @@ class _MatchGameScreenState extends State<MatchGameScreen>
               ..setEntry(3, 2, 0.001)
               ..rotateY(flipAnimation * math.pi),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(8), // Slightly smaller radius for smaller cards
               gradient: card.isRevealed ? _getTarotGradient(card.design) : _getCardBackGradient(),
               border: Border.all(
                 color: card.isSelected
                     ? Colors.yellow.withOpacity(0.8)
                     : card.isMatched
-                    ? Colors.green.withOpacity(0.8) // FIXED: Different border for matched cards
+                    ? Colors.green.withOpacity(0.8)
                     : Colors.white.withOpacity(0.3),
-                width: card.isSelected || card.isMatched ? 3 : 2,
+                width: card.isSelected || card.isMatched ? 2 : 1, // Thinner borders for smaller cards
               ),
               boxShadow: [
                 BoxShadow(
                   color: card.isSelected
                       ? Colors.yellow.withOpacity(0.5)
                       : card.isMatched
-                      ? Colors.green.withOpacity(0.5) // FIXED: Green glow for matched cards
+                      ? Colors.green.withOpacity(0.5)
                       : Colors.black.withOpacity(0.3),
-                  blurRadius: card.isSelected || card.isMatched ? 15 : 8,
-                  spreadRadius: card.isSelected || card.isMatched ? 3 : 1,
+                  blurRadius: card.isSelected || card.isMatched ? 10 : 5, // Smaller shadows
+                  spreadRadius: card.isSelected || card.isMatched ? 2 : 1,
                 ),
               ],
             ),
@@ -959,7 +993,7 @@ class _MatchGameScreenState extends State<MatchGameScreen>
   Widget _buildCardBack() {
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(6),
         gradient: LinearGradient(
           colors: [
             Colors.indigo.shade900,
@@ -971,7 +1005,7 @@ class _MatchGameScreenState extends State<MatchGameScreen>
       child: Center(
         child: Icon(
           Icons.auto_awesome,
-          size: 30,
+          size: 20, // Smaller icon for smaller cards
           color: Colors.white.withOpacity(0.7),
         ),
       ),
@@ -1009,19 +1043,19 @@ class _MatchGameScreenState extends State<MatchGameScreen>
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(6),
         gradient: _getTarotGradient(design),
       ),
       child: Center(
         child: Icon(
           icon,
-          size: 40,
+          size: 24, // Smaller icon for smaller cards
           color: Colors.white,
           shadows: [
             Shadow(
               color: Colors.black.withOpacity(0.8),
-              blurRadius: 4,
-              offset: const Offset(2, 2),
+              blurRadius: 3,
+              offset: const Offset(1, 1),
             ),
           ],
         ),

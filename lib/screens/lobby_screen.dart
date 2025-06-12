@@ -680,7 +680,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                               transform: GradientRotation(_rotationController.value * 3.14),
                             ).createShader(bounds),
                             child: Text(
-                              'LOADING COSMIC TOURNAMENT',
+                              'LOADING TOURNAMENT',
                               style: GoogleFonts.creepster(
                                 fontSize: 28,
                                 color: Colors.white,
@@ -1081,7 +1081,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                               ),
                             ),
                             child: Text(
-                              'Players joining the cosmic battle...',
+                              'Players joining the tournament...',
                               style: GoogleFonts.chicle(
                                 fontSize: 18,
                                 color: Colors.white.withOpacity(textOpacity),
@@ -1220,7 +1220,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'The cosmic tournament begins...',
+                      'The tournament begins...',
                       style: GoogleFonts.chicle(
                         fontSize: 20,
                         color: Colors.white.withOpacity(0.9),

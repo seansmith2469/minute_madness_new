@@ -1,4 +1,4 @@
-// lib/screens/memory_game_screen.dart - PART 1 (Lines 1-400)
+// lib/screens/memory_game_screen.dart - PART 1 (Lines 1-700) - ENHANCED WITH PSYCHEDELIC ARROWS
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -470,9 +470,225 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
     }
   }
 
-// Continue with Part 2...
+  // Enhanced psychedelic arrow element with colorful directions
+  Widget _buildPsychedelicArrowElement(PatternElement element, int index, double size, bool isPattern) {
+    // Get colorful arrow color instead of just white
+    final arrowColor = element.color != null
+        ? _getColorFromEnum(element.color!)
+        : _getArrowDirectionColor(element.direction); // New method for colorful arrows
 
-// MEMORY GAME SCREEN PART 2 - Methods and UI (Lines 401+)
+    return AnimatedBuilder(
+      animation: _arrowFlashController,
+      builder: (context, child) {
+        final flash = isPattern ? 0.0 : _arrowFlashController.value;
+        final glowIntensity = 0.7 + (flash * 0.3);
+
+        return Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              colors: [
+                arrowColor.withOpacity(0.9),
+                arrowColor.withOpacity(0.6),
+                arrowColor.withOpacity(0.3),
+              ],
+            ),
+            border: Border.all(
+              color: arrowColor.withOpacity(0.8 + (flash * 0.2)),
+              width: 2 + (flash * 2),
+            ),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: arrowColor.withOpacity(glowIntensity),
+                blurRadius: 12 + (flash * 8),
+                spreadRadius: 3 + (flash * 2),
+              ),
+              BoxShadow(
+                color: Colors.white.withOpacity(glowIntensity * 0.5),
+                blurRadius: 6 + (flash * 4),
+                spreadRadius: 1 + flash,
+              ),
+            ],
+          ),
+          child: Icon(
+            _getIconFromDirection(element.direction),
+            color: Colors.white,
+            size: size * 0.6,
+            shadows: [
+              Shadow(
+                color: Colors.black.withOpacity(0.8),
+                blurRadius: 4,
+                offset: const Offset(1, 1),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // NEW: Get colorful colors for arrow directions when no specific color is set
+  Color _getArrowDirectionColor(ArrowDirection direction) {
+    switch (direction) {
+      case ArrowDirection.up:
+        return Colors.cyan.shade400;
+      case ArrowDirection.down:
+        return Colors.orange.shade400;
+      case ArrowDirection.left:
+        return Colors.green.shade400;
+      case ArrowDirection.right:
+        return Colors.purple.shade400;
+    }
+  }
+
+  // Enhanced psychedelic arrow button with colorful direction-based styling
+  Widget _buildPsychedelicArrowButton(ArrowDirection direction) {
+    final directionColor = _getArrowDirectionColor(direction);
+
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        final pulse = 1.0 + (_pulseController.value * 0.1);
+        final glow = 0.4 + (_pulseController.value * 0.4);
+
+        return Transform.scale(
+          scale: pulse,
+          child: GestureDetector(
+            onTap: () {
+              final useColors = _shouldUseColors();
+              final colorToUse = useColors ? _selectedColor : null;
+              _onArrowTap(direction, colorToUse);
+            },
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    directionColor.withOpacity(0.9),
+                    directionColor.withOpacity(0.7),
+                    directionColor.withOpacity(0.5),
+                  ],
+                ),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.8),
+                  width: 3,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: directionColor.withOpacity(glow),
+                    blurRadius: 20,
+                    spreadRadius: 4,
+                  ),
+                  BoxShadow(
+                    color: Colors.white.withOpacity(glow * 0.6),
+                    blurRadius: 15,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _getIconFromDirection(direction),
+                color: Colors.white,
+                size: 40,
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withOpacity(0.8),
+                    blurRadius: 3,
+                    offset: const Offset(1, 1),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Enhanced color grid with enhanced visual effects
+  Widget _buildPsychedelicColorGrid() {
+    return AnimatedBuilder(
+      animation: _rotationController,
+      builder: (context, child) {
+        return Wrap(
+          spacing: 12, // Increased spacing
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
+          children: PatternColor.values.map((color) {
+            final isSelected = _selectedColor == color;
+            final colorValue = _getColorFromEnum(color);
+
+            return AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, child) {
+                final pulse = isSelected ? 1.0 + (_pulseController.value * 0.3) : 1.0;
+                final glow = isSelected ? 0.8 + (_pulseController.value * 0.4) : 0.4;
+
+                return Transform.scale(
+                  scale: pulse,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedColor = color),
+                    child: Container(
+                      width: 55, // Slightly larger
+                      height: 55,
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          colors: [
+                            colorValue.withOpacity(0.95),
+                            colorValue.withOpacity(0.8),
+                            colorValue.withOpacity(0.6),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: isSelected ? Colors.white : Colors.white.withOpacity(0.5),
+                          width: isSelected ? 4 : 2,
+                        ),
+                        borderRadius: BorderRadius.circular(27),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorValue.withOpacity(glow),
+                            blurRadius: 18,
+                            spreadRadius: 4,
+                          ),
+                          if (isSelected)
+                            BoxShadow(
+                              color: Colors.white.withOpacity(0.9),
+                              blurRadius: 25,
+                              spreadRadius: 6,
+                            ),
+                        ],
+                      ),
+                      child: isSelected
+                          ? Icon(
+                        Icons.check,
+                        color: Colors.white,
+                        size: 24,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.8),
+                            blurRadius: 2,
+                            offset: const Offset(1, 1),
+                          ),
+                        ],
+                      )
+                          : null,
+                    ),
+                  ),
+                );
+              },
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+  // lib/screens/memory_game_screen.dart - PART 2 (Lines 701+) - ENHANCED UI AND METHODS
+
+  // Continue with Part 2 - Methods and UI
 
   Future<void> _submitResult() async {
     try {
@@ -1110,49 +1326,6 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
     );
   }
 
-  Widget _buildPsychedelicArrowElement(PatternElement element, int index, double size, bool isPattern) {
-    final color = element.color != null ? _getColorFromEnum(element.color!) : Colors.white;
-
-    return AnimatedBuilder(
-      animation: _arrowFlashController,
-      builder: (context, child) {
-        final flash = isPattern ? 0.0 : _arrowFlashController.value;
-        final glowIntensity = 0.5 + (flash * 0.5);
-
-        return Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              colors: [
-                color.withOpacity(0.8),
-                color.withOpacity(0.4),
-                color.withOpacity(0.2),
-              ],
-            ),
-            border: Border.all(
-              color: color.withOpacity(0.8 + (flash * 0.2)),
-              width: 2 + (flash * 2),
-            ),
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(glowIntensity),
-                blurRadius: 10 + (flash * 10),
-                spreadRadius: 2 + (flash * 3),
-              ),
-            ],
-          ),
-          child: Icon(
-            _getIconFromDirection(element.direction),
-            color: Colors.white,
-            size: size * 0.6,
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildPsychedelicInputArea() {
     final useColors = _shouldUseColors();
 
@@ -1326,123 +1499,6 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
         const SizedBox(height: 10),
         _buildPsychedelicArrowButton(ArrowDirection.down),
       ],
-    );
-  }
-
-  Widget _buildPsychedelicArrowButton(ArrowDirection direction) {
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        final pulse = 1.0 + (_pulseController.value * 0.1);
-        final glow = 0.4 + (_pulseController.value * 0.4);
-
-        return Transform.scale(
-          scale: pulse,
-          child: GestureDetector(
-            onTap: () {
-              final useColors = _shouldUseColors();
-              final colorToUse = useColors ? _selectedColor : null;
-              _onArrowTap(direction, colorToUse);
-            },
-            child: Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    Colors.white.withOpacity(0.9),
-                    Colors.cyan.withOpacity(0.7),
-                    Colors.purple.withOpacity(0.5),
-                  ],
-                ),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.8),
-                  width: 3,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.white.withOpacity(glow),
-                    blurRadius: 20,
-                    spreadRadius: 3,
-                  ),
-                  BoxShadow(
-                    color: Colors.cyan.withOpacity(glow * 0.7),
-                    blurRadius: 30,
-                    spreadRadius: 5,
-                  ),
-                ],
-              ),
-              child: Icon(
-                _getIconFromDirection(direction),
-                color: Colors.black,
-                size: 40,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildPsychedelicColorGrid() {
-    return AnimatedBuilder(
-      animation: _rotationController,
-      builder: (context, child) {
-        return Wrap(
-          spacing: 10,
-          children: PatternColor.values.map((color) {
-            final isSelected = _selectedColor == color;
-            final colorValue = _getColorFromEnum(color);
-
-            return AnimatedBuilder(
-              animation: _pulseController,
-              builder: (context, child) {
-                final pulse = isSelected ? 1.0 + (_pulseController.value * 0.2) : 1.0;
-                final glow = isSelected ? 0.6 + (_pulseController.value * 0.4) : 0.3;
-
-                return Transform.scale(
-                  scale: pulse,
-                  child: GestureDetector(
-                    onTap: () => setState(() => _selectedColor = color),
-                    child: Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        gradient: RadialGradient(
-                          colors: [
-                            colorValue.withOpacity(0.9),
-                            colorValue.withOpacity(0.7),
-                            colorValue.withOpacity(0.5),
-                          ],
-                        ),
-                        border: Border.all(
-                          color: isSelected ? Colors.white : Colors.white.withOpacity(0.5),
-                          width: isSelected ? 4 : 2,
-                        ),
-                        borderRadius: BorderRadius.circular(25),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorValue.withOpacity(glow),
-                            blurRadius: 15,
-                            spreadRadius: 3,
-                          ),
-                          if (isSelected)
-                            BoxShadow(
-                              color: Colors.white.withOpacity(0.8),
-                              blurRadius: 20,
-                              spreadRadius: 5,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            );
-          }).toList(),
-        );
-      },
     );
   }
 
