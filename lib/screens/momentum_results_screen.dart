@@ -1,7 +1,8 @@
-// lib/screens/momentum_results_screen.dart - MULTI-ROUND TOURNAMENT SYSTEM
+// lib/screens/momentum_results_screen.dart - OPTIMIZED VERSION (7 ROUNDS)
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,6 +15,9 @@ class MomentumResultsScreen extends StatefulWidget {
   final int playerScore;
   final List<int> spinScores;
   final bool isPractice;
+  final List<String> achievements;
+  final double momentumMultiplier;
+  final int comebackBonuses;
 
   const MomentumResultsScreen({
     super.key,
@@ -21,6 +25,9 @@ class MomentumResultsScreen extends StatefulWidget {
     required this.playerScore,
     required this.spinScores,
     this.isPractice = false,
+    this.achievements = const [],
+    this.momentumMultiplier = 1.0,
+    this.comebackBonuses = 0,
   });
 
   @override
@@ -32,22 +39,27 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
   final _db = FirebaseFirestore.instance;
   final _uid = FirebaseAuth.instance.currentUser!.uid;
 
-  static const int TOURNAMENT_SIZE = 64;
+  // UPDATED: 7-round tournament structure (128 players total)
+  static const int TOURNAMENT_SIZE = 128; // INCREASED from 64 to 128
 
-  // Tournament progression logic
+  // UPDATED: 7-round tournament progression
   late final Map<int, int> _playersPerRound = {
-    1: 64, // Round 1: 64 players
-    2: 32, // Round 2: 32 players
-    3: 16, // Round 3: 16 players
-    4: 8,  // Round 4: 8 players
-    5: 4,  // Round 5: 4 players
-    6: 2,  // Round 6: 2 players (FINAL)
+    1: 128, // Round 1: 128 players
+    2: 64,  // Round 2: 64 players
+    3: 32,  // Round 3: 32 players
+    4: 16,  // Round 4: 16 players
+    5: 8,   // Round 5: 8 players
+    6: 4,   // Round 6: 4 players
+    7: 2,   // Round 7: 2 players (FINAL)
   };
 
-  // OPTIMIZED: Reduced animation controllers for better performance
-  late AnimationController _primaryController;  // Combined background + rotation
-  late AnimationController _pulsController;     // Pulsing effects only
-  late AnimationController _scaleController;    // Result animation
+  // ENHANCED ANIMATION CONTROLLERS
+  late AnimationController _primaryController;
+  late AnimationController _pulsController;
+  late AnimationController _scaleController;
+  late AnimationController _achievementController;
+  late AnimationController _confettiController;
+  late AnimationController _statController;
 
   late List<Color> _currentColors;
   late List<Color> _nextColors;
@@ -60,18 +72,23 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
   bool _isChampion = false;
   List<Map<String, dynamic>> _allResults = [];
 
+  // Enhanced visual elements
+  List<ConfettiParticle> _confetti = [];
+  bool _showAchievements = false;
+  int _animatedScore = 0;
+
   @override
   void initState() {
     super.initState();
 
-    // Initialize OPTIMIZED psychedelic background
+    // Initialize enhanced psychedelic background
     _currentColors = _generateGradient();
     _nextColors = _generateGradient();
 
-    // OPTIMIZED: Single primary controller for background AND rotation
+    // Enhanced animation controllers
     _primaryController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: Duration(seconds: widget.momentumMultiplier > 3.0 ? 1 : 2),
     )..addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _currentColors = List.from(_nextColors);
@@ -82,12 +99,27 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
     _pulsController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: Duration(milliseconds: (1500 / math.max(1.0, widget.momentumMultiplier * 0.5)).round()),
     )..repeat(reverse: true);
 
     _scaleController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1200),
+    );
+
+    _achievementController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    );
+
+    _confettiController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4000),
+    );
+
+    _statController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
     );
 
     // Only calculate results for tournament mode
@@ -100,71 +132,127 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
   List<Color> _generateGradient() {
     final random = math.Random();
-    // OPTIMIZED: Momentum-themed colors for better performance
-    final momentumColors = [
-      Colors.red.shade700,
-      Colors.orange.shade600,
-      Colors.yellow.shade500,
-      Colors.green.shade600,
-      Colors.blue.shade700,
-      Colors.indigo.shade600,
-      Colors.purple.shade700,
-      Colors.pink.shade600,
-    ];
 
-    // OPTIMIZED: Reduced from 10 to 4 colors for better performance
+    // Enhanced colors based on performance
+    List<Color> baseColors = widget.playerScore > 3500 // UPDATED threshold for 7 spins
+        ? [Colors.amber.shade700, Colors.yellow.shade600, Colors.orange.shade700, Colors.red.shade700]
+        : widget.playerScore > 2800 // UPDATED threshold for 7 spins
+        ? [Colors.green.shade700, Colors.lime.shade600, Colors.cyan.shade600, Colors.blue.shade700]
+        : [Colors.purple.shade700, Colors.pink.shade600, Colors.indigo.shade700, Colors.blue.shade800];
+
     return List.generate(
-        4, (_) => momentumColors[random.nextInt(momentumColors.length)]);
+        4, (_) => baseColors[random.nextInt(baseColors.length)]);
   }
 
   void _handlePracticeMode() {
-    // For practice mode, just show completion and allow restart
     setState(() {
       _isLoading = false;
-      _playerRank = 1; // Always winner in practice
+      _playerRank = 1;
       _totalPlayers = 1;
     });
 
     _scaleController.forward();
+    _animateScore();
 
-    // Show completion dialog after a delay
-    Timer(const Duration(seconds: 2), () {
+    if (widget.achievements.isNotEmpty) {
+      Timer(const Duration(seconds: 1), () {
+        _showAchievementCelebration();
+      });
+    }
+
+    // Haptic feedback for good performance - UPDATED thresholds for 7 spins
+    if (widget.playerScore >= 3500) {
+      HapticFeedback.heavyImpact();
+    } else if (widget.playerScore >= 2800) {
+      HapticFeedback.mediumImpact();
+    }
+
+    Timer(const Duration(seconds: 3), () {
       if (mounted) {
         _showPracticeCompletionDialog();
       }
     });
   }
 
+  void _animateScore() {
+    const duration = Duration(milliseconds: 2000);
+    const increment = 50;
+
+    Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      setState(() {
+        if (_animatedScore < widget.playerScore) {
+          _animatedScore = math.min(_animatedScore + increment, widget.playerScore);
+        } else {
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  void _showAchievementCelebration() {
+    setState(() {
+      _showAchievements = true;
+    });
+
+    _achievementController.forward();
+    _createConfetti();
+    _confettiController.forward();
+
+    // Achievement sound simulation with haptic
+    for (int i = 0; i < widget.achievements.length; i++) {
+      Timer(Duration(milliseconds: i * 500), () {
+        HapticFeedback.selectionClick();
+      });
+    }
+  }
+
+  void _createConfetti() {
+    final random = math.Random();
+    _confetti.clear();
+
+    for (int i = 0; i < 50; i++) {
+      _confetti.add(ConfettiParticle(
+        x: random.nextDouble() * 400,
+        y: -20,
+        dx: (random.nextDouble() - 0.5) * 4,
+        dy: random.nextDouble() * 3 + 2,
+        color: [Colors.yellow, Colors.orange, Colors.red, Colors.purple, Colors.cyan][
+        random.nextInt(5)
+        ],
+        rotation: random.nextDouble() * 6.28,
+        rotationSpeed: (random.nextDouble() - 0.5) * 0.2,
+      ));
+    }
+  }
+
   Future<void> _calculateTournamentResults() async {
     try {
-      print('Momentum Calculating tournament results for ${widget.tourneyId}');
+      print('Enhanced Momentum: Calculating tournament results for ${widget.tourneyId}');
 
-      // Get current tournament state
       final tourneyDoc = await _db.collection('momentum_tournaments').doc(widget.tourneyId).get();
 
       if (!tourneyDoc.exists) {
-        print('Momentum tournament document does not exist');
+        print('Enhanced Momentum: tournament document does not exist');
         setState(() => _isLoading = false);
         return;
       }
 
       final tourneyData = tourneyDoc.data();
       if (tourneyData == null) {
-        print('Momentum tournament data is null');
+        print('Enhanced Momentum: tournament data is null');
         setState(() => _isLoading = false);
         return;
       }
 
-      // Get current round from tournament data or derive from player count
-      final currentPlayerCount = tourneyData['playerCount'] as int? ?? 64;
+      final currentPlayerCount = tourneyData['playerCount'] as int? ?? 128;
       _currentRound = _getRoundFromPlayerCount(currentPlayerCount);
 
-      print('Momentum Current round: $_currentRound with $currentPlayerCount players');
+      print('Enhanced Momentum: Current round: $_currentRound with $currentPlayerCount players');
 
-      // Wait for results to come in
+      // Wait for results with enhanced loading
       int attempts = 0;
       int resultCount = 0;
-      final expectedResults = math.min(currentPlayerCount, _playersPerRound[_currentRound] ?? 64);
+      final expectedResults = math.min(currentPlayerCount, _playersPerRound[_currentRound] ?? 128);
 
       while (attempts < 15 && resultCount < (expectedResults * 0.8)) {
         await Future.delayed(const Duration(seconds: 1));
@@ -176,7 +264,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
             .get();
 
         resultCount = resultsSnapshot.docs.length;
-        print('Momentum Attempt ${attempts + 1}: Found $resultCount / $expectedResults results');
+        print('Enhanced Momentum: Attempt ${attempts + 1}: Found $resultCount / $expectedResults results');
 
         if (resultCount >= (expectedResults * 0.8)) break;
         attempts++;
@@ -196,6 +284,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
           final spinScores = List<int>.from(data['spinScores'] as List? ?? []);
           final momentum = data['momentum'] as double? ?? 1.0;
           final isBot = data['isBot'] as bool? ?? false;
+          final achievements = List<String>.from(data['achievements'] as List? ?? []);
 
           return {
             'uid': data['uid'] as String? ?? doc.id,
@@ -203,6 +292,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
             'spinScores': spinScores,
             'momentum': momentum,
             'isBot': isBot,
+            'achievements': achievements,
           };
         } catch (e) {
           return null;
@@ -232,21 +322,36 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
       _playerRank = playerRankAmongSubmissions;
       _totalPlayers = _allResults.length;
 
-      // Determine advancement based on current round
+      // Determine advancement
       final playersAdvancing = _getAdvancingPlayers(_currentRound, _totalPlayers);
       _playerAdvanced = _playerRank <= playersAdvancing;
-      _isChampion = (_currentRound == 6 && _playerRank == 1); // Champion if won final
+      _isChampion = (_currentRound == 7 && _playerRank == 1); // UPDATED: Round 7 is final
 
-      print('Momentum Player rank: $_playerRank/$_totalPlayers, Round: $_currentRound, Advanced: $_playerAdvanced, Champion: $_isChampion');
+      print('Enhanced Momentum: Player rank: $_playerRank/$_totalPlayers, Round: $_currentRound, Advanced: $_playerAdvanced, Champion: $_isChampion');
 
       setState(() {
         _isLoading = false;
       });
 
       _scaleController.forward();
+      _animateScore();
 
-      // Process advancement or completion
-      await Future.delayed(const Duration(seconds: 3));
+      // Enhanced celebrations based on performance
+      if (_isChampion) {
+        HapticFeedback.heavyImpact();
+        _createConfetti();
+        _confettiController.forward();
+      } else if (_playerAdvanced) {
+        HapticFeedback.mediumImpact();
+      }
+
+      if (widget.achievements.isNotEmpty) {
+        Timer(const Duration(seconds: 1), () {
+          _showAchievementCelebration();
+        });
+      }
+
+      await Future.delayed(const Duration(seconds: 4));
       if (mounted) {
         if (_isChampion) {
           _showChampionDialog();
@@ -258,7 +363,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
       }
 
     } catch (e) {
-      print('Error calculating momentum results: $e');
+      print('Error calculating enhanced momentum results: $e');
       setState(() {
         _isLoading = false;
       });
@@ -266,37 +371,33 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
   }
 
   int _getRoundFromPlayerCount(int playerCount) {
-    // Determine current round based on player count
-    if (playerCount > 32) return 1;
-    if (playerCount > 16) return 2;
-    if (playerCount > 8) return 3;
-    if (playerCount > 4) return 4;
-    if (playerCount > 2) return 5;
-    return 6; // Final
+    if (playerCount > 64) return 1;
+    if (playerCount > 32) return 2;
+    if (playerCount > 16) return 3;
+    if (playerCount > 8) return 4;
+    if (playerCount > 4) return 5;
+    if (playerCount > 2) return 6;
+    return 7;
   }
 
   int _getAdvancingPlayers(int round, int totalPlayers) {
-    // Calculate how many players advance to next round
-    if (round >= 6) return 1; // Final round - only 1 winner
-
+    if (round >= 7) return 1;
     final nextRoundTarget = _playersPerRound[round + 1] ?? 1;
     return math.min(nextRoundTarget, totalPlayers ~/ 2);
   }
 
   Future<void> _processAdvancement() async {
     try {
-      print('Momentum Processing advancement for round $_currentRound');
+      print('Enhanced Momentum: Processing advancement for round $_currentRound');
 
-      // Get advancing players (top performers)
       final playersAdvancing = _getAdvancingPlayers(_currentRound, _totalPlayers);
       final advancingPlayerIds = _allResults
           .take(playersAdvancing)
           .map((result) => result['uid'] as String)
           .toList();
 
-      print('Momentum $playersAdvancing players advancing to round ${_currentRound + 1}');
+      print('Enhanced Momentum: $playersAdvancing players advancing to round ${_currentRound + 1}');
 
-      // Clear results collection for next round
       final batch = _db.batch();
       final resultsCollection = _db
           .collection('momentum_tournaments')
@@ -326,15 +427,14 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
         'players': advancingPlayerIds,
         'playerCount': advancingPlayerIds.length,
         'round': _currentRound + 1,
-        'status': 'waiting', // Reset to waiting for next round
+        'status': 'waiting',
         'bots': advancingBots,
       });
 
       await batch.commit();
 
-      print('Momentum Tournament updated for round ${_currentRound + 1}');
+      print('Enhanced Momentum: Tournament updated for round ${_currentRound + 1}');
 
-      // Navigate to next round
       Timer(const Duration(seconds: 2), () {
         if (mounted) {
           Navigator.pushReplacement(
@@ -350,7 +450,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
       });
 
     } catch (e) {
-      print('Error processing momentum advancement: $e');
+      print('Error processing enhanced momentum advancement: $e');
     }
   }
 
@@ -366,7 +466,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
             colors: [Colors.yellow, Colors.orange, Colors.red],
           ).createShader(bounds),
           child: Text(
-            'Momentum Complete!',
+            'Momentum Mastery!',
             style: GoogleFonts.creepster(
               fontSize: 24,
               color: Colors.white,
@@ -375,13 +475,60 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
             textAlign: TextAlign.center,
           ),
         ),
-        content: Text(
-          'Total Score: ${widget.playerScore}\nSpin Scores: ${widget.spinScores.join(", ")}\n\nYou\'ve mastered the momentum wheel!',
-          style: GoogleFonts.chicle(
-            fontSize: 16,
-            color: Colors.white,
-          ),
-          textAlign: TextAlign.center,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Total Score: ${widget.playerScore}\nSpin Scores: ${widget.spinScores.join(", ")}\nMax Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x',
+              style: GoogleFonts.chicle(
+                fontSize: 16,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (widget.achievements.isNotEmpty) ...[
+              const SizedBox(height: 15),
+              Text(
+                'Achievements Unlocked:',
+                style: GoogleFonts.chicle(
+                  fontSize: 14,
+                  color: Colors.yellow,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: widget.achievements.map((achievement) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.yellow.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.yellow.withOpacity(0.6)),
+                  ),
+                  child: Text(
+                    '🏆 $achievement',
+                    style: GoogleFonts.chicle(
+                      fontSize: 10,
+                      color: Colors.white,
+                    ),
+                  ),
+                )).toList(),
+              ),
+            ],
+            if (widget.comebackBonuses > 0) ...[
+              const SizedBox(height: 10),
+              Text(
+                '🔄 Comeback Bonuses: ${widget.comebackBonuses}',
+                style: GoogleFonts.chicle(
+                  fontSize: 14,
+                  color: Colors.cyan,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ],
         ),
         actions: [
           Container(
@@ -394,10 +541,10 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
             child: TextButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                Navigator.pop(context); // Return to momentum select screen
+                Navigator.pop(context);
               },
               child: Text(
-                'Try Again',
+                'Master More Momentum',
                 style: GoogleFonts.chicle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -422,22 +569,58 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
             colors: [Colors.yellow, Colors.orange, Colors.red],
           ).createShader(bounds),
           child: Text(
-            'MOMENTUM CHAMPION!',
+            'ULTIMATE MOMENTUM CHAMPION!',
             style: GoogleFonts.creepster(
-              fontSize: 24,
+              fontSize: 22,
               color: Colors.white,
               fontWeight: FontWeight.bold,
             ),
             textAlign: TextAlign.center,
           ),
         ),
-        content: Text(
-          'You are the ultimate Momentum Master!\n\nDefeated ${TOURNAMENT_SIZE - 1} other players across 6 intense rounds!\n\nTotal Score: ${widget.playerScore}\nSpin Scores: ${widget.spinScores.join(", ")}',
-          style: GoogleFonts.chicle(
-            fontSize: 16,
-            color: Colors.white,
-          ),
-          textAlign: TextAlign.center,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'You are the ultimate Momentum Master!\n\nDefeated ${TOURNAMENT_SIZE - 1} other players across 7 intense rounds!\n\nTotal Score: ${widget.playerScore}\nMax Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x\nSpin Scores: ${widget.spinScores.join(", ")}',
+              style: GoogleFonts.chicle(
+                fontSize: 16,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (widget.achievements.isNotEmpty) ...[
+              const SizedBox(height: 15),
+              Text(
+                'Champion Achievements:',
+                style: GoogleFonts.chicle(
+                  fontSize: 14,
+                  color: Colors.yellow,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: widget.achievements.map((achievement) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.yellow.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.yellow.withOpacity(0.6)),
+                  ),
+                  child: Text(
+                    '🏆 $achievement',
+                    style: GoogleFonts.chicle(
+                      fontSize: 9,
+                      color: Colors.white,
+                    ),
+                  ),
+                )).toList(),
+              ),
+            ],
+          ],
         ),
         actions: [
           Container(
@@ -493,13 +676,60 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
             textAlign: TextAlign.center,
           ),
         ),
-        content: Text(
-          'Eliminated in $roundName\n\nFinal Position: $_playerRank out of $TOURNAMENT_SIZE players\n\nTotal Score: ${widget.playerScore}\nSpin Scores: ${widget.spinScores.join(", ")}\n\n${_getEncouragementMessage()}',
-          style: GoogleFonts.chicle(
-            fontSize: 16,
-            color: Colors.white,
-          ),
-          textAlign: TextAlign.center,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Eliminated in $roundName\n\nFinal Position: $_playerRank out of $TOURNAMENT_SIZE players\n\nTotal Score: ${widget.playerScore}\nMax Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x\nSpin Scores: ${widget.spinScores.join(", ")}\n\n${_getEncouragementMessage()}',
+              style: GoogleFonts.chicle(
+                fontSize: 16,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (widget.achievements.isNotEmpty) ...[
+              const SizedBox(height: 15),
+              Text(
+                'Achievements Earned:',
+                style: GoogleFonts.chicle(
+                  fontSize: 14,
+                  color: Colors.yellow,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: widget.achievements.map((achievement) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.yellow.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.yellow.withOpacity(0.6)),
+                  ),
+                  child: Text(
+                    '🏆 $achievement',
+                    style: GoogleFonts.chicle(
+                      fontSize: 9,
+                      color: Colors.white,
+                    ),
+                  ),
+                )).toList(),
+              ),
+            ],
+            if (widget.comebackBonuses > 0) ...[
+              const SizedBox(height: 10),
+              Text(
+                '🔄 Comeback Bonuses: ${widget.comebackBonuses}',
+                style: GoogleFonts.chicle(
+                  fontSize: 14,
+                  color: Colors.cyan,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ],
         ),
         actions: [
           Container(
@@ -534,17 +764,20 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
   String _getRoundName(int round) {
     switch (round) {
-      case 1: return 'Round of 64';
-      case 2: return 'Round of 32';
-      case 3: return 'Round of 16';
-      case 4: return 'Quarterfinals';
-      case 5: return 'Semifinals';
-      case 6: return 'Finals';
+      case 1: return 'Round of 128';
+      case 2: return 'Round of 64';
+      case 3: return 'Round of 32';
+      case 4: return 'Round of 16';
+      case 5: return 'Quarterfinals';
+      case 6: return 'Semifinals';
+      case 7: return 'Finals';
       default: return 'Round $round';
     }
   }
 
   String _getEncouragementMessage() {
+    if (widget.playerScore >= 3500) return 'Legendary momentum control!'; // Updated for 7 spins
+    if (widget.playerScore >= 2800) return 'Masterful spinning technique!'; // Updated for 7 spins
     if (_playerRank <= 8) return 'Outstanding spinning skills!';
     if (_playerRank <= 16) return 'Great momentum control!';
     if (_playerRank <= 32) return 'Solid wheel mastery!';
@@ -556,6 +789,9 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
     _primaryController.dispose();
     _pulsController.dispose();
     _scaleController.dispose();
+    _achievementController.dispose();
+    _confettiController.dispose();
+    _statController.dispose();
     super.dispose();
   }
 
@@ -576,19 +812,19 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
           return Stack(
             children: [
-              // OPTIMIZED: Simplified background
+              // ENHANCED PSYCHEDELIC BACKGROUND
               Container(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     colors: interpolatedColors,
                     center: Alignment.center,
-                    radius: 1.5,
+                    radius: 1.5 + (widget.momentumMultiplier * 0.2),
                     stops: [0.0, 0.3, 0.6, 1.0],
                   ),
                 ),
               ),
 
-              // OPTIMIZED: Single rotating overlay using primary controller
+              // MOMENTUM-RESPONSIVE ROTATING OVERLAY
               AnimatedBuilder(
                 animation: _primaryController,
                 builder: (context, child) {
@@ -597,9 +833,9 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                       gradient: LinearGradient(
                         colors: [
                           Colors.transparent,
-                          interpolatedColors[1].withOpacity(0.3),
+                          interpolatedColors[1].withOpacity(0.3 + widget.momentumMultiplier * 0.1),
                           Colors.transparent,
-                          interpolatedColors[3].withOpacity(0.2),
+                          interpolatedColors[3].withOpacity(0.2 + widget.momentumMultiplier * 0.05),
                           Colors.transparent,
                         ],
                         begin: Alignment.topLeft,
@@ -611,10 +847,44 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                 },
               ),
 
+              // CONFETTI SYSTEM
+              if (_confetti.isNotEmpty)
+                AnimatedBuilder(
+                  animation: _confettiController,
+                  builder: (context, child) {
+                    return CustomPaint(
+                      painter: ConfettiPainter(_confetti, _confettiController.value),
+                      size: Size.infinite,
+                    );
+                  },
+                ),
+
+              // ACHIEVEMENT OVERLAY
+              if (_showAchievements)
+                AnimatedBuilder(
+                  animation: _achievementController,
+                  builder: (context, child) {
+                    final fadeIn = _achievementController.value;
+                    return Container(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          colors: [
+                            Colors.yellow.withOpacity(0.3 * fadeIn),
+                            Colors.orange.withOpacity(0.2 * fadeIn),
+                            Colors.transparent,
+                          ],
+                          center: Alignment.center,
+                          radius: 2.0 * fadeIn,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
               // MAIN CONTENT
               SafeArea(
                 child: Center(
-                  child: _isLoading ? _buildLoadingWidget() : _buildResultWidget(),
+                  child: _isLoading ? _buildEnhancedLoadingWidget() : _buildEnhancedResultWidget(),
                 ),
               ),
             ],
@@ -624,7 +894,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
     );
   }
 
-  Widget _buildLoadingWidget() {
+  Widget _buildEnhancedLoadingWidget() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -632,10 +902,10 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
           animation: _primaryController,
           builder: (context, child) {
             return Transform.rotate(
-              angle: _primaryController.value * 2 * math.pi,
+              angle: _primaryController.value * 2 * math.pi * widget.momentumMultiplier,
               child: Container(
-                width: 100,
-                height: 100,
+                width: 120,
+                height: 120,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
@@ -644,14 +914,14 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                   boxShadow: [
                     BoxShadow(
                       color: Colors.white.withOpacity(0.4),
-                      blurRadius: 20,
-                      spreadRadius: 5,
+                      blurRadius: 20 + (widget.momentumMultiplier * 10),
+                      spreadRadius: 5 + (widget.momentumMultiplier * 2),
                     ),
                   ],
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.rotate_right,
-                  size: 50,
+                  size: 60,
                   color: Colors.white,
                 ),
               ),
@@ -664,7 +934,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
             colors: [Colors.orange, Colors.red, Colors.yellow],
           ).createShader(bounds),
           child: Text(
-            widget.isPractice ? 'Momentum Complete!' : 'Analyzing Momentum Results...',
+            widget.isPractice ? 'Momentum Analysis Complete!' : 'Analyzing Tournament Results...',
             style: GoogleFonts.creepster(
               fontSize: 24,
               color: Colors.white,
@@ -677,40 +947,48 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                 ),
               ],
             ),
+            textAlign: TextAlign.center,
           ),
         ),
         if (!widget.isPractice) ...[
-          const SizedBox(height: 10),
-          Text(
-            'Calculating tournament standings...',
-            style: GoogleFonts.chicle(
-              fontSize: 16,
-              color: Colors.white.withOpacity(0.8),
-              shadows: [
-                Shadow(
-                  color: Colors.black.withOpacity(0.7),
-                  blurRadius: 4,
-                  offset: const Offset(1, 1),
+          const SizedBox(height: 15),
+          AnimatedBuilder(
+            animation: _pulsController,
+            builder: (context, child) {
+              final pulse = 0.8 + (_pulsController.value * 0.2);
+              return Transform.scale(
+                scale: pulse,
+                child: Text(
+                  'Processing ${widget.momentumMultiplier.toStringAsFixed(1)}x momentum performance...',
+                  style: GoogleFonts.chicle(
+                    fontSize: 16,
+                    color: Colors.white.withOpacity(0.8),
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withOpacity(0.7),
+                        blurRadius: 4,
+                        offset: const Offset(1, 1),
+                      ),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ],
       ],
     );
   }
 
-  Widget _buildResultWidget() {
-    // For practice mode, show simple completion
+  Widget _buildEnhancedResultWidget() {
     if (widget.isPractice) {
-      return _buildPracticeResult();
+      return _buildEnhancedPracticeResult();
     }
-
-    // For tournament mode, show full ranking
-    return _buildTournamentResult();
+    return _buildEnhancedTournamentResult();
   }
 
-  Widget _buildPracticeResult() {
+  Widget _buildEnhancedPracticeResult() {
     return AnimatedBuilder(
       animation: _scaleController,
       builder: (context, child) {
@@ -720,169 +998,39 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Practice completion icon
+              // Enhanced completion icon with momentum glow
               AnimatedBuilder(
                 animation: _pulsController,
                 builder: (context, child) {
                   final pulseScale = 1.0 + (_pulsController.value * 0.2);
+                  final glowIntensity = 0.4 + (_pulsController.value * 0.6);
+
                   return Transform.scale(
                     scale: pulseScale,
                     child: Container(
-                      width: 140,
-                      height: 140,
+                      width: 160,
+                      height: 160,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(
-                          colors: [
-                            Colors.green.withOpacity(0.9),
-                            Colors.lime.withOpacity(0.8),
-                            Colors.cyan.withOpacity(0.7)
-                          ],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.white.withOpacity(0.4),
-                            blurRadius: 25,
-                            spreadRadius: 8,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.check_circle,
-                        size: 70,
-                        color: Colors.white,
-                      ),
-                    ),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 40),
-
-              ShaderMask(
-                shaderCallback: (bounds) => LinearGradient(
-                  colors: [Colors.green, Colors.lime, Colors.cyan],
-                ).createShader(bounds),
-                child: Text(
-                  'PRACTICE COMPLETE!',
-                  style: GoogleFonts.creepster(
-                    fontSize: 32,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2.0,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black.withOpacity(0.9),
-                        blurRadius: 12,
-                        offset: const Offset(4, 4),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 30),
-
-              Container(
-                padding: const EdgeInsets.all(25),
-                margin: const EdgeInsets.symmetric(horizontal: 40),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(25),
-                  gradient: RadialGradient(
-                    colors: [
-                      Colors.black.withOpacity(0.4),
-                      Colors.green.withOpacity(0.3),
-                      Colors.cyan.withOpacity(0.2),
-                    ],
-                  ),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.3),
-                    width: 2,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      'Total Score: ${widget.playerScore}',
-                      style: GoogleFonts.chicle(
-                        fontSize: 20,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Spin Scores: ${widget.spinScores.join(", ")}\nReady for tournament?',
-                      style: GoogleFonts.chicle(
-                        fontSize: 16,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildTournamentResult() {
-    final isWinner = _isChampion;
-    final isAdvancing = _playerAdvanced && !_isChampion;
-    final isTopTen = _playerRank <= 10;
-    final isTopHalf = _playerRank <= (TOURNAMENT_SIZE ~/ 2);
-    final roundName = _getRoundName(_currentRound);
-
-    return AnimatedBuilder(
-      animation: _scaleController,
-      builder: (context, child) {
-        final scale = _scaleController.value;
-        return Transform.scale(
-          scale: scale,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // PSYCHEDELIC result icon
-              AnimatedBuilder(
-                animation: _pulsController,
-                builder: (context, child) {
-                  final pulseScale = 1.0 + (_pulsController.value * 0.2);
-                  return Transform.scale(
-                    scale: pulseScale,
-                    child: Container(
-                      width: 140,
-                      height: 140,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: isWinner
+                          colors: widget.playerScore >= 3500 // Updated threshold for 7 spins
                               ? [Colors.yellow.withOpacity(0.9), Colors.orange.withOpacity(0.8), Colors.red.withOpacity(0.7)]
-                              : isAdvancing
+                              : widget.playerScore >= 2800 // Updated threshold for 7 spins
                               ? [Colors.green.withOpacity(0.9), Colors.lime.withOpacity(0.8), Colors.cyan.withOpacity(0.7)]
-                              : isTopHalf
-                              ? [Colors.blue.withOpacity(0.9), Colors.cyan.withOpacity(0.8), Colors.purple.withOpacity(0.7)]
-                              : [Colors.purple.withOpacity(0.9), Colors.pink.withOpacity(0.8), Colors.indigo.withOpacity(0.7)],
+                              : [Colors.blue.withOpacity(0.9), Colors.purple.withOpacity(0.8), Colors.indigo.withOpacity(0.7)],
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.white.withOpacity(0.4),
-                            blurRadius: 25,
-                            spreadRadius: 8,
-                          ),
-                          BoxShadow(
-                            color: isWinner ? Colors.yellow.withOpacity(0.6) : Colors.purple.withOpacity(0.6),
-                            blurRadius: 35,
-                            spreadRadius: 5,
+                            color: Colors.white.withOpacity(glowIntensity),
+                            blurRadius: 25 + (widget.momentumMultiplier * 10),
+                            spreadRadius: 8 + (widget.momentumMultiplier * 3),
                           ),
                         ],
                       ),
                       child: Icon(
-                        isWinner ? Icons.emoji_events :
-                        isAdvancing ? Icons.arrow_upward : Icons.rotate_right,
-                        size: 70,
+                        widget.playerScore >= 3500 ? Icons.emoji_events :
+                        widget.playerScore >= 2800 ? Icons.star : Icons.check_circle,
+                        size: 80,
                         color: Colors.white,
                       ),
                     ),
@@ -892,18 +1040,18 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
               const SizedBox(height: 40),
 
-              // PSYCHEDELIC main result text
+              // Enhanced title with momentum indicators
               ShaderMask(
                 shaderCallback: (bounds) => LinearGradient(
-                  colors: isWinner
-                      ? [Colors.yellow, Colors.orange, Colors.red, Colors.pink]
-                      : isAdvancing
-                      ? [Colors.green, Colors.lime, Colors.cyan, Colors.blue]
-                      : [Colors.purple, Colors.pink, Colors.cyan, Colors.blue],
+                  colors: widget.playerScore >= 3500 // Updated threshold for 7 spins
+                      ? [Colors.yellow, Colors.orange, Colors.red]
+                      : widget.playerScore >= 2800 // Updated threshold for 7 spins
+                      ? [Colors.green, Colors.lime, Colors.cyan]
+                      : [Colors.blue, Colors.purple, Colors.indigo],
                 ).createShader(bounds),
                 child: Text(
-                  isWinner ? 'MOMENTUM CHAMPION!' :
-                  isAdvancing ? 'YOU ADVANCED!' : 'ELIMINATED',
+                  widget.playerScore >= 3500 ? 'MOMENTUM LEGEND!' :
+                  widget.playerScore >= 2800 ? 'MOMENTUM MASTER!' : 'PRACTICE COMPLETE!',
                   style: GoogleFonts.creepster(
                     fontSize: 32,
                     color: Colors.white,
@@ -915,57 +1063,15 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                         blurRadius: 12,
                         offset: const Offset(4, 4),
                       ),
-                      Shadow(
-                        color: isWinner ? Colors.yellow.withOpacity(0.7) : Colors.purple.withOpacity(0.7),
-                        blurRadius: 16,
-                        offset: const Offset(-3, -3),
-                      ),
                     ],
                   ),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Round and placement text
-              Text(
-                isWinner ? 'Ultimate Champion!' :
-                isAdvancing ? 'Advancing to ${_getRoundName(_currentRound + 1)}' :
-                'Eliminated in $roundName',
-                style: GoogleFonts.chicle(
-                  fontSize: 20,
-                  color: Colors.white.withOpacity(0.9),
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withOpacity(0.8),
-                      blurRadius: 6,
-                      offset: const Offset(2, 2),
-                    ),
-                  ],
-                ),
-                textAlign: TextAlign.center,
-              ),
-
-              const SizedBox(height: 10),
-
-              Text(
-                '$_playerRank / $TOURNAMENT_SIZE',
-                style: GoogleFonts.chicle(
-                  fontSize: 24,
-                  color: Colors.white.withOpacity(0.9),
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withOpacity(0.8),
-                      blurRadius: 6,
-                      offset: const Offset(2, 2),
-                    ),
-                  ],
+                  textAlign: TextAlign.center,
                 ),
               ),
 
               const SizedBox(height: 30),
 
-              // PSYCHEDELIC performance details
+              // Enhanced stats container
               Container(
                 padding: const EdgeInsets.all(25),
                 margin: const EdgeInsets.symmetric(horizontal: 40),
@@ -992,26 +1098,63 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                 ),
                 child: Column(
                   children: [
-                    Text(
-                      'Total Score: ${widget.playerScore}',
-                      style: GoogleFonts.chicle(
-                        fontSize: 20,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black.withOpacity(0.8),
-                            blurRadius: 4,
-                            offset: const Offset(2, 2),
+                    // Animated score display
+                    AnimatedBuilder(
+                      animation: _statController,
+                      builder: (context, child) {
+                        return ShaderMask(
+                          shaderCallback: (bounds) => LinearGradient(
+                            colors: [Colors.yellow, Colors.orange],
+                          ).createShader(bounds),
+                          child: Text(
+                            'Score: $_animatedScore',
+                            style: GoogleFonts.chicle(
+                              fontSize: 24,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withOpacity(0.8),
+                                  blurRadius: 4,
+                                  offset: const Offset(2, 2),
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
-                    const SizedBox(height: 10),
+
+                    const SizedBox(height: 15),
+
+                    // Enhanced momentum display
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.speed,
+                          color: Colors.cyan,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Max Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x',
+                          style: GoogleFonts.chicle(
+                            fontSize: 18,
+                            color: Colors.cyan,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Spin breakdown - OPTIMIZED for 7 spins
                     Text(
-                      'Spin Scores: ${widget.spinScores.join(", ")}',
+                      'Spins: ${widget.spinScores.join(" • ")}',
                       style: GoogleFonts.chicle(
-                        fontSize: 16,
+                        fontSize: 14, // Reduced font size for 7 spins
                         color: Colors.white.withOpacity(0.9),
                         shadows: [
                           Shadow(
@@ -1022,17 +1165,41 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                         ],
                       ),
                     ),
+
+                    if (widget.comebackBonuses > 0) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.trending_up,
+                            color: Colors.green,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Comeback Bonuses: ${widget.comebackBonuses}',
+                            style: GoogleFonts.chicle(
+                              fontSize: 14,
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
                     const SizedBox(height: 15),
+
+                    // Performance message - UPDATED for 7 spins
                     Text(
-                      isWinner
-                          ? 'Perfect momentum mastery!\nDefeated ${TOURNAMENT_SIZE - 1} opponents across 6 rounds!'
-                          : isAdvancing
-                          ? 'Excellent wheel control!\nAdvancing to the next round!'
-                          : isTopTen
-                          ? 'Great spinning performance!\nTop ${(_playerRank / TOURNAMENT_SIZE * 100).round()}% finish!'
-                          : isTopHalf
-                          ? 'Solid momentum effort!\nAbove average finish!'
-                          : 'Good effort!\nRoom for improvement!',
+                      widget.playerScore >= 3500
+                          ? 'Perfect momentum mastery!\nReady to dominate tournaments!'
+                          : widget.playerScore >= 2800
+                          ? 'Excellent control!\nTournament ready!'
+                          : widget.playerScore >= 2100
+                          ? 'Great improvement!\nKeep building momentum!'
+                          : 'Good foundation!\nPractice makes perfect!',
                       style: GoogleFonts.chicle(
                         fontSize: 16,
                         color: Colors.white.withOpacity(0.9),
@@ -1049,6 +1216,437 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                   ],
                 ),
               ),
+
+              // Achievement display
+              if (widget.achievements.isNotEmpty) ...[
+                const SizedBox(height: 25),
+                AnimatedBuilder(
+                  animation: _achievementController,
+                  builder: (context, child) {
+                    final scale = 0.5 + (_achievementController.value * 0.5);
+                    final opacity = _achievementController.value;
+
+                    return Transform.scale(
+                      scale: scale,
+                      child: Opacity(
+                        opacity: opacity,
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          margin: const EdgeInsets.symmetric(horizontal: 30),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.yellow.withOpacity(0.3),
+                                Colors.orange.withOpacity(0.2),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: Colors.yellow.withOpacity(0.6),
+                              width: 2,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                '🏆 ACHIEVEMENTS UNLOCKED! 🏆',
+                                style: GoogleFonts.creepster(
+                                  fontSize: 18,
+                                  color: Colors.yellow,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: widget.achievements.map((achievement) => Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.yellow.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(15),
+                                    border: Border.all(color: Colors.yellow.withOpacity(0.4)),
+                                  ),
+                                  child: Text(
+                                    achievement,
+                                    style: GoogleFonts.chicle(
+                                      fontSize: 12,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                )).toList(),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEnhancedTournamentResult() {
+    final isWinner = _isChampion;
+    final isAdvancing = _playerAdvanced && !_isChampion;
+    final isTopTen = _playerRank <= 10;
+    final isTopHalf = _playerRank <= (TOURNAMENT_SIZE ~/ 2);
+    final roundName = _getRoundName(_currentRound);
+
+    return AnimatedBuilder(
+      animation: _scaleController,
+      builder: (context, child) {
+        final scale = _scaleController.value;
+        return Transform.scale(
+          scale: scale,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Enhanced result icon with momentum effects
+              AnimatedBuilder(
+                animation: _pulsController,
+                builder: (context, child) {
+                  final pulseScale = 1.0 + (_pulsController.value * 0.3);
+                  final glowIntensity = 0.4 + (_pulsController.value * 0.6);
+
+                  return Transform.scale(
+                    scale: pulseScale,
+                    child: Container(
+                      width: 160,
+                      height: 160,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: isWinner
+                              ? [Colors.yellow.withOpacity(0.9), Colors.orange.withOpacity(0.8), Colors.red.withOpacity(0.7)]
+                              : isAdvancing
+                              ? [Colors.green.withOpacity(0.9), Colors.lime.withOpacity(0.8), Colors.cyan.withOpacity(0.7)]
+                              : isTopHalf
+                              ? [Colors.blue.withOpacity(0.9), Colors.cyan.withOpacity(0.8), Colors.purple.withOpacity(0.7)]
+                              : [Colors.purple.withOpacity(0.9), Colors.pink.withOpacity(0.8), Colors.indigo.withOpacity(0.7)],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.white.withOpacity(glowIntensity),
+                            blurRadius: 25 + (widget.momentumMultiplier * 15),
+                            spreadRadius: 8 + (widget.momentumMultiplier * 4),
+                          ),
+                          BoxShadow(
+                            color: isWinner ? Colors.yellow.withOpacity(0.6) :
+                            isAdvancing ? Colors.green.withOpacity(0.6) : Colors.purple.withOpacity(0.6),
+                            blurRadius: 35 + (widget.momentumMultiplier * 20),
+                            spreadRadius: 5 + (widget.momentumMultiplier * 2),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        isWinner ? Icons.emoji_events :
+                        isAdvancing ? Icons.arrow_upward :
+                        isTopHalf ? Icons.star_half : Icons.rotate_right,
+                        size: 80,
+                        color: Colors.white,
+                      ),
+                    ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 40),
+
+              // Enhanced main result text with momentum indicators
+              ShaderMask(
+                shaderCallback: (bounds) => LinearGradient(
+                  colors: isWinner
+                      ? [Colors.yellow, Colors.orange, Colors.red, Colors.pink]
+                      : isAdvancing
+                      ? [Colors.green, Colors.lime, Colors.cyan, Colors.blue]
+                      : [Colors.purple, Colors.pink, Colors.cyan, Colors.blue],
+                ).createShader(bounds),
+                child: Text(
+                  isWinner ? 'ULTIMATE MOMENTUM CHAMPION!' :
+                  isAdvancing ? 'ADVANCED WITH MOMENTUM!' : 'MOMENTUM CHALLENGE COMPLETE',
+                  style: GoogleFonts.creepster(
+                    fontSize: 28,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2.0,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withOpacity(0.9),
+                        blurRadius: 12,
+                        offset: const Offset(4, 4),
+                      ),
+                      Shadow(
+                        color: isWinner ? Colors.yellow.withOpacity(0.7) : Colors.purple.withOpacity(0.7),
+                        blurRadius: 16,
+                        offset: const Offset(-3, -3),
+                      ),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Round and placement text
+              Text(
+                isWinner ? 'Perfect Momentum Mastery!' :
+                isAdvancing ? 'Advancing to ${_getRoundName(_currentRound + 1)}' :
+                'Eliminated in $roundName',
+                style: GoogleFonts.chicle(
+                  fontSize: 20,
+                  color: Colors.white.withOpacity(0.9),
+                  shadows: [
+                    Shadow(
+                      color: Colors.black.withOpacity(0.8),
+                      blurRadius: 6,
+                      offset: const Offset(2, 2),
+                    ),
+                  ],
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 10),
+
+              Text(
+                '$_playerRank / $TOURNAMENT_SIZE', // Shows rank out of 128 players
+                style: GoogleFonts.chicle(
+                  fontSize: 28,
+                  color: Colors.white.withOpacity(0.9),
+                  fontWeight: FontWeight.bold,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black.withOpacity(0.8),
+                      blurRadius: 6,
+                      offset: const Offset(2, 2),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 30),
+
+              // Enhanced performance details with momentum stats
+              Container(
+                padding: const EdgeInsets.all(25),
+                margin: const EdgeInsets.symmetric(horizontal: 40),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(25),
+                  gradient: RadialGradient(
+                    colors: [
+                      Colors.black.withOpacity(0.4),
+                      Colors.purple.withOpacity(0.3),
+                      Colors.cyan.withOpacity(0.2),
+                    ],
+                  ),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.3),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.5),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // Animated score
+                    ShaderMask(
+                      shaderCallback: (bounds) => LinearGradient(
+                        colors: [Colors.yellow, Colors.orange],
+                      ).createShader(bounds),
+                      child: Text(
+                        'Score: $_animatedScore',
+                        style: GoogleFonts.chicle(
+                          fontSize: 24,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withOpacity(0.8),
+                              blurRadius: 4,
+                              offset: const Offset(2, 2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 15),
+
+                    // Enhanced momentum display
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.speed,
+                          color: widget.momentumMultiplier > 3.0 ? Colors.red :
+                          widget.momentumMultiplier > 2.0 ? Colors.orange : Colors.cyan,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Peak Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x',
+                          style: GoogleFonts.chicle(
+                            fontSize: 18,
+                            color: widget.momentumMultiplier > 3.0 ? Colors.red :
+                            widget.momentumMultiplier > 2.0 ? Colors.orange : Colors.cyan,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    Text(
+                      'Spins: ${widget.spinScores.join(" • ")}',
+                      style: GoogleFonts.chicle(
+                        fontSize: 14, // Reduced for 7 spins
+                        color: Colors.white.withOpacity(0.9),
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.7),
+                            blurRadius: 3,
+                            offset: const Offset(1, 1),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    if (widget.comebackBonuses > 0) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.trending_up,
+                            color: Colors.green,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Comeback Bonuses: ${widget.comebackBonuses}',
+                            style: GoogleFonts.chicle(
+                              fontSize: 14,
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    const SizedBox(height: 15),
+
+                    Text(
+                      isWinner
+                          ? 'Perfect momentum mastery!\nDefeated ${TOURNAMENT_SIZE - 1} opponents across 7 rounds!\nMax Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x achieved!'
+                          : isAdvancing
+                          ? 'Excellent momentum control!\nAdvancing with ${widget.momentumMultiplier.toStringAsFixed(1)}x peak momentum!'
+                          : isTopTen
+                          ? 'Outstanding performance!\nTop ${(_playerRank / TOURNAMENT_SIZE * 100).round()}% finish with ${widget.momentumMultiplier.toStringAsFixed(1)}x momentum!'
+                          : isTopHalf
+                          ? 'Solid momentum effort!\nAbove average finish!'
+                          : 'Good momentum foundation!\nKeep building your skills!',
+                      style: GoogleFonts.chicle(
+                        fontSize: 16,
+                        color: Colors.white.withOpacity(0.9),
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.7),
+                            blurRadius: 3,
+                            offset: const Offset(1, 1),
+                          ),
+                        ],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+
+              // Achievement display for tournaments
+              if (widget.achievements.isNotEmpty) ...[
+                const SizedBox(height: 25),
+                AnimatedBuilder(
+                  animation: _achievementController,
+                  builder: (context, child) {
+                    final scale = 0.5 + (_achievementController.value * 0.5);
+                    final opacity = _achievementController.value;
+
+                    return Transform.scale(
+                      scale: scale,
+                      child: Opacity(
+                        opacity: opacity,
+                        child: Container(
+                          padding: const EdgeInsets.all(15),
+                          margin: const EdgeInsets.symmetric(horizontal: 30),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.yellow.withOpacity(0.3),
+                                Colors.orange.withOpacity(0.2),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: Colors.yellow.withOpacity(0.6),
+                              width: 2,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                '🏆 TOURNAMENT ACHIEVEMENTS 🏆',
+                                style: GoogleFonts.creepster(
+                                  fontSize: 16,
+                                  color: Colors.yellow,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: widget.achievements.map((achievement) => Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.yellow.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.yellow.withOpacity(0.4)),
+                                  ),
+                                  child: Text(
+                                    achievement,
+                                    style: GoogleFonts.chicle(
+                                      fontSize: 10,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                )).toList(),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
 
               const SizedBox(height: 30),
 
@@ -1072,9 +1670,9 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                 ),
                 child: Text(
                   isWinner
-                      ? 'Ultimate Momentum Master!'
+                      ? 'Legendary Momentum Master!'
                       : isAdvancing
-                      ? 'Next round starting soon...'
+                      ? 'Momentum building... Next round incoming!'
                       : _getEncouragementMessage(),
                   style: GoogleFonts.chicle(
                     fontSize: 18,
@@ -1095,5 +1693,61 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
         );
       },
     );
+  }
+}
+
+class ConfettiParticle {
+  double x, y, dx, dy, rotation, rotationSpeed;
+  Color color;
+
+  ConfettiParticle({
+    required this.x,
+    required this.y,
+    required this.dx,
+    required this.dy,
+    required this.color,
+    required this.rotation,
+    required this.rotationSpeed,
+  });
+}
+
+class ConfettiPainter extends CustomPainter {
+  final List<ConfettiParticle> confetti;
+  final double animation;
+
+  ConfettiPainter(this.confetti, this.animation);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final particle in confetti) {
+      final currentX = particle.x + (particle.dx * animation * 200);
+      final currentY = particle.y + (particle.dy * animation * 400);
+      final currentRotation = particle.rotation + (particle.rotationSpeed * animation * 10);
+
+      if (currentY > size.height + 20) continue;
+
+      canvas.save();
+      canvas.translate(currentX, currentY);
+      canvas.rotate(currentRotation);
+
+      final paint = Paint()
+        ..color = particle.color.withOpacity(1.0 - (animation * 0.5))
+        ..style = PaintingStyle.fill;
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          const Rect.fromLTWH(-6, -2, 12, 4),
+          const Radius.circular(2),
+        ),
+        paint,
+      );
+
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(ConfettiPainter oldDelegate) {
+    return oldDelegate.animation != animation;
   }
 }
