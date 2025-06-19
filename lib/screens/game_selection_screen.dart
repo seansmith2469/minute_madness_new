@@ -7,6 +7,7 @@ import 'duration_select_screen.dart';
 import 'memory_select_screen.dart';
 import 'match_select_screen.dart';
 import 'momentum_select_screen.dart';
+import 'maze_select_screen.dart';
 
 class GameSelectionScreen extends StatefulWidget {
   const GameSelectionScreen({super.key});
@@ -214,6 +215,19 @@ class _GameSelectionScreenState extends State<GameSelectionScreen>
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(builder: (_) => const MomentumSelectScreen()),
+                            ),
+                            isComingSoon: false,
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          _GameModeCard(
+                            title: 'MAZE MADNESS',
+                            subtitle: 'Memory Navigation Challenge',
+                            description: 'Navigate psychedelic mazes from memory alone',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const MazeSelectScreen()),
                             ),
                             isComingSoon: false,
                           ),
