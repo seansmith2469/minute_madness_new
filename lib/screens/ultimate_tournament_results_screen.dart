@@ -96,7 +96,7 @@ class _UltimateTournamentResultsScreenState extends State<UltimateTournamentResu
       Colors.purple.shade900,   // Memory
       Colors.pink.shade800,     // Match
       Colors.blue.shade900,     // Maze
-      Colors.gold.shade600,     // Champion
+      Colors.amber.shade600,     // Champion
       Colors.cyan.shade700,
       Colors.green.shade800,
       Colors.indigo.shade800,
@@ -170,7 +170,7 @@ class _UltimateTournamentResultsScreenState extends State<UltimateTournamentResu
         dx: (random.nextDouble() - 0.5) * 0.01,
         dy: -random.nextDouble() * 0.02,
         color: [
-          Colors.gold,
+          Colors.amber,
           Colors.yellow,
           Colors.orange,
           Colors.red,
@@ -290,7 +290,7 @@ class _UltimateTournamentResultsScreenState extends State<UltimateTournamentResu
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
                       colors: [
-                        Colors.gold.withOpacity(0.9),
+                        Colors.amber.withOpacity(0.9),
                         Colors.orange.withOpacity(0.8),
                         Colors.red.withOpacity(0.6),
                       ],
@@ -316,13 +316,13 @@ class _UltimateTournamentResultsScreenState extends State<UltimateTournamentResu
           ShaderMask(
             shaderCallback: (bounds) => LinearGradient(
               colors: [
-                Colors.gold,
+                Colors.amber,
                 Colors.orange,
                 Colors.red,
                 Colors.purple,
                 Colors.blue,
                 Colors.green,
-                Colors.gold,
+                Colors.amber,
               ],
             ).createShader(bounds),
             child: Text(
@@ -379,11 +379,11 @@ class _UltimateTournamentResultsScreenState extends State<UltimateTournamentResu
                 child: ShaderMask(
                   shaderCallback: (bounds) => LinearGradient(
                     colors: _isChampion ? [
-                      Colors.gold,
+                      Colors.amber,
                       Colors.yellow,
                       Colors.orange,
                       Colors.red,
-                      Colors.gold,
+                      Colors.amber,
                     ] : [
                       Colors.red,
                       Colors.orange,
@@ -457,7 +457,7 @@ class _UltimateTournamentResultsScreenState extends State<UltimateTournamentResu
               borderRadius: BorderRadius.circular(30),
               gradient: RadialGradient(
                 colors: [
-                  Colors.gold.withOpacity(0.95),
+                  Colors.amber.withOpacity(0.95),
                   Colors.yellow.withOpacity(0.9),
                   Colors.orange.withOpacity(0.8),
                   Colors.red.withOpacity(0.7),
@@ -475,7 +475,7 @@ class _UltimateTournamentResultsScreenState extends State<UltimateTournamentResu
                   spreadRadius: 20,
                 ),
                 BoxShadow(
-                  color: Colors.gold.withOpacity(0.8),
+                  color: Colors.amber.withOpacity(0.8),
                   blurRadius: 80,
                   spreadRadius: 15,
                 ),
@@ -751,7 +751,7 @@ class _UltimateTournamentResultsScreenState extends State<UltimateTournamentResu
                           if (rank == 1)
                             Icon(
                               Icons.emoji_events,
-                              color: Colors.gold,
+                              color: Colors.amber,
                               size: 30,
                             ),
                         ],
@@ -829,7 +829,7 @@ class _UltimateTournamentResultsScreenState extends State<UltimateTournamentResu
   }
 
   Color _getRankColor(int rank) {
-    if (rank == 1) return Colors.gold;
+    if (rank == 1) return Colors.amber;
     if (rank == 2) return Colors.grey.shade300;
     if (rank == 3) return Colors.orange.shade700;
     if (rank <= 10) return Colors.purple;

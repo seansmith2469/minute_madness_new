@@ -1,13 +1,8 @@
-// lib/services/ultimate_tournament_service.dart - SERVICE FOR ULTIMATE TOURNAMENTS
+// lib/services/ultimate_tournament_service.dart - ULTIMATE TOURNAMENT ORCHESTRATOR
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum UltimateBotDifficulty {
-  casual,     // 30-70% performance
-  skilled,    // 50-85% performance
-  expert,     // 70-95% performance
-  champion    // 85-98% performance
-}
+enum UltimateBotDifficulty { novice, skilled, expert, master, ultimate }
 
 class UltimateBotPlayer {
   final String id;
@@ -19,283 +14,264 @@ class UltimateBotPlayer {
     required this.name,
     required this.difficulty,
   });
-
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'difficulty': difficulty.name,
-      'isBot': true,
-    };
-  }
 }
 
 class UltimateTournamentService {
-  static final FirebaseFirestore _db = FirebaseFirestore.instance;
-  static final List<String> _botNames = [
-    // Precision bots
-    'TimeMaster', 'PerfectPulse', 'ChronoSniper', 'TickTock', 'PrecisionPro',
+  static final _db = FirebaseFirestore.instance;
+  static final _random = math.Random();
 
-    // Momentum bots
-    'SpinCycle', 'MomentumKing', 'WheelWarrior', 'SpeedDemon', 'RotationRex',
-
-    // Memory bots
-    'BrainBox', 'MemoryMaster', 'PatternPro', 'RecallRocket', 'MindMeld',
-
-    // Match bots
-    'CardCrafter', 'MatchMaker', 'TarotTitan', 'PairPerfect', 'FlipFlash',
-
-    // Maze bots
-    'MazeRunner', 'PathFinder', 'LabyLord', 'RouteRanger', 'WallWalker',
-
-    // Ultimate champions
-    'UltimateAce', 'GrandMaster', 'ChampionX', 'PerfectPlayer', 'EliteBot',
-    'MegaMind', 'SuperStar', 'ProGamer', 'WinWizard', 'VictoryViper',
-    'TopTier', 'AlphaBot', 'MaxPower', 'UltraBot', 'PrimePlayer',
-    'SkillSage', 'GameGod', 'WinBot', 'ProBot', 'ChampBot',
+  // Bot names for Ultimate Tournament
+  static const List<String> _ultimateBotNames = [
+    'Ultimate Warrior', 'Champion Mind', 'Memory Master', 'Precision Pro',
+    'Speed Demon', 'Maze Runner', 'Pattern King', 'Timing Lord',
+    'Momentum God', 'Card Shark', 'Brain Storm', 'Focus Force',
+    'Quick Strike', 'Mental Giant', 'Game Boss', 'Skill Lord',
+    'Power Player', 'Mind Bender', 'Time Master', 'Space Ace',
+    'Logic Legend', 'Rapid Fire', 'Sharp Shot', 'Fast Track',
+    'Mental Muscle', 'Game Guru', 'Skill Sage', 'Power Pro',
+    'Mind Mage', 'Time Titan', 'Space Ninja', 'Logic Lion',
+    'Rapid Rex', 'Sharp Shark', 'Fast Fox', 'Mental Monster',
+    'Game Ghost', 'Skill Spirit', 'Power Phantom', 'Mind Monk',
+    'Time Tiger', 'Space Spider', 'Logic Lynx', 'Rapid Rabbit',
+    'Sharp Snake', 'Fast Falcon', 'Mental Moose', 'Game Giraffe',
+    'Skill Sloth', 'Power Panda', 'Mind Monkey', 'Time Turtle',
   ];
 
-  /// Add bots to an ultimate tournament
-  static Future<List<UltimateBotPlayer>> addBotsToTournament(String tourneyId, int count) async {
+  /// Add bots to an Ultimate Tournament
+  static Future<void> addBotsToTournament(String tourneyId, int count) async {
     try {
-      print('🏆 Adding $count ultimate bots to tournament $tourneyId');
+      final tourneyRef = _db.collection('ultimate_tournaments').doc(tourneyId);
+      final snapshot = await tourneyRef.get();
 
-      final random = math.Random();
-      final newBots = <UltimateBotPlayer>[];
-      final botsToAdd = <String, dynamic>{};
-
-      for (int i = 0; i < count; i++) {
-        final botId = 'ultimate_bot_${DateTime.now().millisecondsSinceEpoch}_$i';
-        final name = _botNames[random.nextInt(_botNames.length)];
-
-        // Weighted difficulty distribution for ultimate tournament
-        final difficultyRoll = random.nextDouble();
-        UltimateBotDifficulty difficulty;
-
-        if (difficultyRoll < 0.15) {
-          difficulty = UltimateBotDifficulty.champion; // 15% champions
-        } else if (difficultyRoll < 0.35) {
-          difficulty = UltimateBotDifficulty.expert; // 20% experts
-        } else if (difficultyRoll < 0.70) {
-          difficulty = UltimateBotDifficulty.skilled; // 35% skilled
-        } else {
-          difficulty = UltimateBotDifficulty.casual; // 30% casual
-        }
-
-        final bot = UltimateBotPlayer(
-          id: botId,
-          name: name,
-          difficulty: difficulty,
-        );
-
-        newBots.add(bot);
-        botsToAdd[botId] = bot.toFirestore();
+      if (!snapshot.exists) {
+        throw Exception('Tournament not found');
       }
 
-      // Add bots to Firestore
-      await _db.collection('ultimate_tournaments').doc(tourneyId).update({
+      final data = snapshot.data()!;
+      final currentBots = data['bots'] as Map<String, dynamic>? ?? {};
+      final currentCount = data['playerCount'] as int? ?? 0;
+
+      final Map<String, dynamic> newBots = Map.from(currentBots);
+
+      for (int i = 0; i < count; i++) {
+        final botId = 'bot_${DateTime.now().millisecondsSinceEpoch}_$i';
+        final botName = _ultimateBotNames[_random.nextInt(_ultimateBotNames.length)];
+
+        // Assign difficulty based on tournament position
+        final difficulty = _assignUltimateBotDifficulty(currentCount + i + 1);
+
+        newBots[botId] = {
+          'name': botName,
+          'difficulty': difficulty.name,
+          'isBot': true,
+        };
+      }
+
+      await tourneyRef.update({
+        'bots': newBots,
         'playerCount': FieldValue.increment(count),
-        'players': FieldValue.arrayUnion(newBots.map((b) => b.id).toList()),
-        'bots': botsToAdd,
       });
 
-      print('🏆 Successfully added ${newBots.length} ultimate bots');
-      return newBots;
-
+      print('✨ Added $count ultimate bots to tournament $tourneyId');
     } catch (e) {
-      print('🏆 Error adding ultimate bots: $e');
+      print('❌ Error adding ultimate bots: $e');
       rethrow;
     }
   }
 
-  /// Submit bot results for a specific game in the ultimate tournament
+  /// Assign bot difficulty based on tournament progression
+  static UltimateBotDifficulty _assignUltimateBotDifficulty(int playerPosition) {
+    if (playerPosition <= 10) return UltimateBotDifficulty.ultimate;  // Top 10 are ultimate
+    if (playerPosition <= 25) return UltimateBotDifficulty.master;    // Next 15 are masters
+    if (playerPosition <= 45) return UltimateBotDifficulty.expert;    // Next 20 are experts
+    if (playerPosition <= 60) return UltimateBotDifficulty.skilled;   // Next 15 are skilled
+    return UltimateBotDifficulty.novice;                              // Last 4 are novices
+  }
+
+  /// Submit bot results for a specific game in the Ultimate Tournament
   static Future<void> submitBotResults(
       String tourneyId,
       String gameType,
       List<UltimateBotPlayer> bots,
       ) async {
     try {
-      print('🏆 Submitting ultimate bot results for $gameType in $tourneyId');
+      print('🎮 Submitting ${bots.length} bot results for $gameType in Ultimate Tournament $tourneyId');
 
       final batch = _db.batch();
-      final random = math.Random();
 
       for (final bot in bots) {
-        final result = _generateGameResult(gameType, bot.difficulty, random);
+        final result = _generateUltimateBotResult(gameType, bot.difficulty);
 
-        final resultDoc = _db
+        final resultRef = _db
             .collection('ultimate_tournaments')
             .doc(tourneyId)
             .collection('game_results')
             .doc('${bot.id}_$gameType');
 
-        batch.set(resultDoc, {
+        batch.set(resultRef, {
           'playerId': bot.id,
           'gameType': gameType,
           'score': result['score'],
           'rank': result['rank'],
           'details': result['details'],
           'isBot': true,
+          'botDifficulty': bot.difficulty.name,
           'submittedAt': FieldValue.serverTimestamp(),
         });
       }
 
       await batch.commit();
-      print('🏆 Ultimate bot results submitted for $gameType');
-
+      print('✅ Ultimate bot results submitted for $gameType');
     } catch (e) {
-      print('🏆 Error submitting ultimate bot results: $e');
+      print('❌ Error submitting ultimate bot results: $e');
     }
   }
 
-  /// Generate game-specific results based on bot difficulty
-  static Map<String, dynamic> _generateGameResult(
+  /// Generate bot result based on game type and difficulty
+  static Map<String, dynamic> _generateUltimateBotResult(
       String gameType,
       UltimateBotDifficulty difficulty,
-      math.Random random,
       ) {
-    // Performance ranges based on difficulty
-    final (minPerf, maxPerf) = switch (difficulty) {
-      UltimateBotDifficulty.casual => (0.3, 0.7),
-      UltimateBotDifficulty.skilled => (0.5, 0.85),
-      UltimateBotDifficulty.expert => (0.7, 0.95),
-      UltimateBotDifficulty.champion => (0.85, 0.98),
-    };
-
-    final performance = minPerf + (random.nextDouble() * (maxPerf - minPerf));
+    final basePerformance = _getBasePerformance(difficulty);
+    final variance = _getVariance(difficulty);
 
     switch (gameType) {
       case 'precision':
-        return _generatePrecisionResult(performance, random);
+        return _generatePrecisionResult(basePerformance, variance);
       case 'momentum':
-        return _generateMomentumResult(performance, random);
+        return _generateMomentumResult(basePerformance, variance);
       case 'memory':
-        return _generateMemoryResult(performance, random);
+        return _generateMemoryResult(basePerformance, variance);
       case 'match':
-        return _generateMatchResult(performance, random);
+        return _generateMatchResult(basePerformance, variance);
       case 'maze':
-        return _generateMazeResult(performance, random);
+        return _generateMazeResult(basePerformance, variance);
       default:
-        throw ArgumentError('Unknown game type: $gameType');
+        throw Exception('Unknown game type: $gameType');
     }
   }
 
-  static Map<String, dynamic> _generatePrecisionResult(double performance, math.Random random) {
-    // Target is 3000ms, perfect score is 0 error
-    final maxError = 2000; // 2 second max error
-    final errorMs = ((1.0 - performance) * maxError).round();
-    final actualError = random.nextBool() ? errorMs : -errorMs; // Can be early or late
+  static double _getBasePerformance(UltimateBotDifficulty difficulty) {
+    switch (difficulty) {
+      case UltimateBotDifficulty.novice:
+        return 0.3;  // 30% performance
+      case UltimateBotDifficulty.skilled:
+        return 0.5;  // 50% performance
+      case UltimateBotDifficulty.expert:
+        return 0.7;  // 70% performance
+      case UltimateBotDifficulty.master:
+        return 0.85; // 85% performance
+      case UltimateBotDifficulty.ultimate:
+        return 0.95; // 95% performance
+    }
+  }
+
+  static double _getVariance(UltimateBotDifficulty difficulty) {
+    switch (difficulty) {
+      case UltimateBotDifficulty.novice:
+        return 0.3;  // High variance
+      case UltimateBotDifficulty.skilled:
+        return 0.25; // Medium-high variance
+      case UltimateBotDifficulty.expert:
+        return 0.2;  // Medium variance
+      case UltimateBotDifficulty.master:
+        return 0.15; // Low variance
+      case UltimateBotDifficulty.ultimate:
+        return 0.1;  // Very low variance
+    }
+  }
+
+  static Map<String, dynamic> _generatePrecisionResult(double base, double variance) {
+    final performance = _clamp(base + (_random.nextDouble() - 0.5) * variance, 0.0, 1.0);
+    final targetMs = 3000;
+    final maxError = 2000; // 2 seconds max error
+    final errorMs = (maxError * (1.0 - performance)).round();
 
     return {
-      'score': errorMs, // Lower is better
-      'rank': (performance * 1000).round(),
+      'score': math.max(0, 1000 - errorMs),
+      'rank': _calculateRankFromPerformance(performance),
       'details': {
-        'errorMs': actualError,
-        'targetMs': 3000,
+        'errorMs': errorMs,
+        'targetMs': targetMs,
       },
     };
   }
 
-  static Map<String, dynamic> _generateMomentumResult(double performance, math.Random random) {
-    // 10 spins, max 1000 points per spin
-    final maxScore = 10000;
-    final score = (performance * maxScore).round();
-
-    // Generate individual spin scores
-    final spinScores = <int>[];
-    var remaining = score;
-
-    for (int i = 0; i < 10; i++) {
-      if (i == 9) {
-        spinScores.add(remaining); // Last spin gets remainder
-      } else {
-        final spinScore = math.min(1000, (remaining / (10 - i) * (0.8 + random.nextDouble() * 0.4)).round());
-        spinScores.add(spinScore);
-        remaining -= spinScore;
-      }
-    }
+  static Map<String, dynamic> _generateMomentumResult(double base, double variance) {
+    final performance = _clamp(base + (_random.nextDouble() - 0.5) * variance, 0.0, 1.0);
+    final baseScore = 5000; // Base score for 10 spins
+    final score = (baseScore * performance).round();
 
     return {
       'score': score,
-      'rank': score,
+      'rank': _calculateRankFromPerformance(performance),
       'details': {
         'totalScore': score,
-        'spinScores': spinScores,
-        'maxSpeed': 1.0 + (performance * 4.0), // 1x to 5x speed
+        'spins': 10,
       },
     };
   }
 
-  static Map<String, dynamic> _generateMemoryResult(double performance, math.Random random) {
-    // Level achieved (1-20+)
+  static Map<String, dynamic> _generateMemoryResult(double base, double variance) {
+    final performance = _clamp(base + (_random.nextDouble() - 0.5) * variance, 0.0, 1.0);
     final maxLevel = 15;
-    final level = math.max(1, (performance * maxLevel).round());
-
-    // Time bonus based on performance
-    final timeMs = (5000 + random.nextInt(10000)).round(); // 5-15 seconds per level average
+    final level = math.max(1, (maxLevel * performance).round());
 
     return {
-      'score': level,
-      'rank': level * 1000 - timeMs, // Higher level is better, lower time is better
+      'score': level * 100,
+      'rank': _calculateRankFromPerformance(performance),
       'details': {
         'level': level,
-        'completionTimeMs': timeMs,
+        'maxLevel': maxLevel,
       },
     };
   }
 
-  static Map<String, dynamic> _generateMatchResult(double performance, math.Random random) {
-    // Time to complete match game (lower is better)
-    final minTime = 10000; // 10 seconds for perfect
-    final maxTime = 120000; // 2 minutes for poor
-    final timeRange = maxTime - minTime;
-    final completionTime = minTime + ((1.0 - performance) * timeRange).round();
-
-    // Penalty seconds for wrong matches
-    final maxPenalties = 20;
-    final penalties = ((1.0 - performance) * maxPenalties).round();
+  static Map<String, dynamic> _generateMatchResult(double base, double variance) {
+    final performance = _clamp(base + (_random.nextDouble() - 0.5) * variance, 0.0, 1.0);
+    final baseTime = 30000; // 30 seconds base
+    final timeMs = (baseTime * (2.0 - performance)).round(); // Lower time is better
 
     return {
-      'score': completionTime,
-      'rank': 200000 - completionTime, // Lower time is better
+      'score': math.max(1000, 60000 - timeMs), // Convert to score
+      'rank': _calculateRankFromPerformance(performance),
       'details': {
-        'completionTimeMs': completionTime,
-        'penaltySeconds': penalties,
+        'completionTimeMs': timeMs,
+        'penalties': 0,
       },
     };
   }
 
-  static Map<String, dynamic> _generateMazeResult(double performance, math.Random random) {
-    // Round completed (1-6), with completion status
-    final maxRound = 6;
-    final round = math.max(1, (performance * maxRound).round());
-    final completed = performance > 0.7 ? random.nextBool() : false;
-
-    // Time and wrong moves
-    final baseTime = round * 15000; // 15 seconds per round base
-    final timeVariation = random.nextInt(10000); // +/- 10 seconds
-    final completionTime = baseTime + timeVariation;
-
-    final maxWrongMoves = 10;
-    final wrongMoves = ((1.0 - performance) * maxWrongMoves).round();
+  static Map<String, dynamic> _generateMazeResult(double base, double variance) {
+    final performance = _clamp(base + (_random.nextDouble() - 0.5) * variance, 0.0, 1.0);
+    final completed = performance > 0.4; // 40% chance to complete
+    final round = completed ? math.max(1, (6 * performance).round()) : 1;
 
     return {
-      'score': round,
-      'rank': round * 10000 + (completed ? 5000 : 0) - completionTime ~/ 100,
+      'score': completed ? round * 1000 : 0,
+      'rank': _calculateRankFromPerformance(performance),
       'details': {
         'round': round,
         'completed': completed,
-        'completionTimeMs': completionTime,
-        'wrongMoves': wrongMoves,
       },
     };
   }
 
-  /// Calculate overall tournament rankings across all games
+  static int _calculateRankFromPerformance(double performance) {
+    // Convert performance (0.0-1.0) to rank (1-64)
+    final rank = ((1.0 - performance) * 63).round() + 1;
+    return math.max(1, math.min(64, rank));
+  }
+
+  static double _clamp(double value, double min, double max) {
+    return math.max(min, math.min(max, value));
+  }
+
+  /// Calculate overall rankings across all games
   static Future<List<Map<String, dynamic>>> calculateOverallRankings(String tourneyId) async {
     try {
-      print('🏆 Calculating overall rankings for $tourneyId');
+      print('🏆 Calculating overall Ultimate Tournament rankings for $tourneyId');
 
-      // Get all game results
       final resultsSnapshot = await _db
           .collection('ultimate_tournaments')
           .doc(tourneyId)
@@ -303,7 +279,7 @@ class UltimateTournamentService {
           .get();
 
       // Group results by player
-      final Map<String, Map<String, dynamic>> playerScores = {};
+      final Map<String, Map<String, dynamic>> playerResults = {};
 
       for (final doc in resultsSnapshot.docs) {
         final data = doc.data();
@@ -312,82 +288,83 @@ class UltimateTournamentService {
         final score = data['score'] as int;
         final rank = data['rank'] as int;
 
-        playerScores.putIfAbsent(playerId, () => {
-          'playerId': playerId,
-          'gameScores': <String, int>{},
-          'gameRanks': <String, int>{},
-          'totalScore': 0,
-          'averageRank': 0.0,
-          'gamesPlayed': 0,
-        });
+        if (!playerResults.containsKey(playerId)) {
+          playerResults[playerId] = {
+            'playerId': playerId,
+            'isBot': data['isBot'] ?? false,
+            'games': <String, Map<String, dynamic>>{},
+            'totalScore': 0,
+            'averageRank': 0.0,
+            'gamesCompleted': 0,
+          };
+        }
 
-        playerScores[playerId]!['gameScores'][gameType] = score;
-        playerScores[playerId]!['gameRanks'][gameType] = rank;
-        playerScores[playerId]!['gamesPlayed'] = (playerScores[playerId]!['gamesPlayed'] as int) + 1;
+        playerResults[playerId]!['games'][gameType] = {
+          'score': score,
+          'rank': rank,
+          'details': data['details'],
+        };
+
+        playerResults[playerId]!['totalScore'] += score;
+        playerResults[playerId]!['gamesCompleted'] += 1;
       }
 
-      // Calculate overall scores (sum of ranks across all games)
+      // Calculate average ranks and sort
       final rankings = <Map<String, dynamic>>[];
 
-      for (final playerData in playerScores.values) {
-        final gameRanks = playerData['gameRanks'] as Map<String, int>;
-        final totalRank = gameRanks.values.fold<int>(0, (sum, rank) => sum + rank);
-        final gamesPlayed = playerData['gamesPlayed'] as int;
+      for (final playerData in playerResults.values) {
+        final games = playerData['games'] as Map<String, dynamic>;
+        double totalRank = 0;
+        int gameCount = 0;
 
-        if (gamesPlayed == 5) { // Only include players who completed all games
-          rankings.add({
-            ...playerData,
-            'totalScore': totalRank,
-            'averageRank': totalRank / gamesPlayed,
-          });
+        for (final gameData in games.values) {
+          totalRank += (gameData['rank'] as int);
+          gameCount++;
         }
+
+        playerData['averageRank'] = gameCount > 0 ? totalRank / gameCount : 64.0;
+        rankings.add(playerData);
       }
 
-      // Sort by total rank (higher is better)
-      rankings.sort((a, b) => (b['totalScore'] as int).compareTo(a['totalScore'] as int));
+      // Sort by total score (descending), then by average rank (ascending)
+      rankings.sort((a, b) {
+        final scoreComparison = (b['totalScore'] as int).compareTo(a['totalScore'] as int);
+        if (scoreComparison != 0) return scoreComparison;
 
-      print('🏆 Calculated rankings for ${rankings.length} players');
+        return (a['averageRank'] as double).compareTo(b['averageRank'] as double);
+      });
+
+      print('✅ Calculated ${rankings.length} player rankings');
       return rankings;
-
     } catch (e) {
-      print('🏆 Error calculating overall rankings: $e');
+      print('❌ Error calculating overall rankings: $e');
       return [];
     }
   }
 
-  /// Get tournament status and progress
-  static Future<Map<String, dynamic>?> getTournamentStatus(String tourneyId) async {
-    try {
-      final doc = await _db.collection('ultimate_tournaments').doc(tourneyId).get();
-      return doc.data();
-    } catch (e) {
-      print('🏆 Error getting tournament status: $e');
-      return null;
-    }
-  }
-
-  /// Update tournament to next game
+  /// Advance tournament to next game
   static Future<void> advanceToNextGame(String tourneyId) async {
     try {
       await _db.collection('ultimate_tournaments').doc(tourneyId).update({
         'currentGameIndex': FieldValue.increment(1),
-        'lastGameCompletedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      print('🏆 Error advancing to next game: $e');
+      print('❌ Error advancing to next game: $e');
     }
   }
 
-  /// Complete the tournament
-  static Future<void> completeTournament(String tourneyId, String winnerId) async {
+  /// Complete the tournament with a champion
+  static Future<void> completeTournament(String tourneyId, String championId) async {
     try {
       await _db.collection('ultimate_tournaments').doc(tourneyId).update({
         'status': 'completed',
-        'winnerId': winnerId,
+        'championId': championId,
         'completedAt': FieldValue.serverTimestamp(),
       });
+
+      print('🏆 Ultimate Tournament $tourneyId completed with champion $championId');
     } catch (e) {
-      print('🏆 Error completing tournament: $e');
+      print('❌ Error completing tournament: $e');
     }
   }
 }

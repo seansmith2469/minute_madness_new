@@ -1,4 +1,4 @@
-// lib/screens/game_selection_screen.dart - WITH RAINBOW TEXT
+// lib/screens/game_selection_screen.dart - WITH ULTIMATE TOURNAMENT OF TOURNAMENTS
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,6 +8,7 @@ import 'memory_select_screen.dart';
 import 'match_select_screen.dart';
 import 'momentum_select_screen.dart';
 import 'maze_select_screen.dart';
+import 'ultimate_tournament_lobby_screen.dart'; // ADDED: Import Ultimate Tournament
 
 class GameSelectionScreen extends StatefulWidget {
   const GameSelectionScreen({super.key});
@@ -91,7 +92,6 @@ class _GameSelectionScreenState extends State<GameSelectionScreen>
                 radius: 1.2,
                 stops: [0.0, 0.3, 0.6, 0.8, 1.0], // More dramatic color transitions
               ),
-              // ADDED: Overlay pattern for extra intensity
             ),
             // ADDED: Secondary animated overlay for more chaos
             child: AnimatedBuilder(
@@ -116,175 +116,169 @@ class _GameSelectionScreenState extends State<GameSelectionScreen>
                 );
               },
               child: SafeArea(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // CRISP RAINBOW TITLE - READABLE AND BOLD!
-                      ShaderMask(
-                        shaderCallback: (bounds) => const LinearGradient(
-                          colors: [
-                            Colors.red,
-                            Colors.orange,
-                            Colors.yellow,
-                            Colors.green,
-                            Colors.blue,
-                            Colors.indigo,
-                            Colors.purple,
-                            Colors.pink,
-                          ],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        ).createShader(bounds),
-                        child: Text(
-                          'MINUTE MADNESS',
-                          style: GoogleFonts.creepster(
-                            fontSize: 42,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 3.0,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black.withOpacity(0.9),
-                                blurRadius: 12,
-                                offset: const Offset(4, 4),
-                              ),
-                              Shadow(
-                                color: Colors.red.withOpacity(0.7),
-                                blurRadius: 16,
-                                offset: const Offset(-3, -3),
-                              ),
-                              Shadow(
-                                color: Colors.purple.withOpacity(0.5),
-                                blurRadius: 24,
-                                offset: const Offset(0, 0),
-                              ),
+                child: SingleChildScrollView(  // ADDED: ScrollView for overflow protection
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 40), // ADDED: Top padding
+
+                        // CRISP RAINBOW TITLE - READABLE AND BOLD!
+                        ShaderMask(
+                          shaderCallback: (bounds) => const LinearGradient(
+                            colors: [
+                              Colors.red,
+                              Colors.orange,
+                              Colors.yellow,
+                              Colors.green,
+                              Colors.blue,
+                              Colors.indigo,
+                              Colors.purple,
+                              Colors.pink,
                             ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ).createShader(bounds),
+                          child: Text(
+                            'MINUTE MADNESS',
+                            style: GoogleFonts.creepster(
+                              fontSize: 42,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 3.0,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withOpacity(0.9),
+                                  blurRadius: 12,
+                                  offset: const Offset(4, 4),
+                                ),
+                                Shadow(
+                                  color: Colors.red.withOpacity(0.7),
+                                  blurRadius: 16,
+                                  offset: const Offset(-3, -3),
+                                ),
+                                Shadow(
+                                  color: Colors.purple.withOpacity(0.5),
+                                  blurRadius: 24,
+                                  offset: const Offset(0, 0),
+                                ),
+                              ],
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
                         ),
-                      ),
 
-                      const SizedBox(height: 40),
+                        const SizedBox(height: 40),
 
-                      // Clean game options with psychedelic boxes
-                      Column(
-                        children: [
-                          // Game mode buttons
-                          _GameModeCard(
-                            title: 'MINUTE MADNESS',
-                            subtitle: 'Precision Timing Challenge',
-                            description: 'Hit the exact 3-second mark',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const DurationSelectScreen()),
+                        // THE ULTIMATE TOURNAMENT - TOP BILLING!
+                        _GameModeCard(
+                          title: 'ULTIMATE TOURNAMENT',
+                          subtitle: 'Tournament of Tournaments',
+                          description: 'Compete in ALL 5 games in randomized order! Be crowned the Ultimate Champion across all challenges!',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const UltimateTournamentLobbyScreen()),
+                          ),
+                          isUltimate: true, // SPECIAL FLAG for ultimate styling
+                        ),
+
+                        const SizedBox(height: 30),
+
+                        // Section header for individual games
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.3),
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                              width: 1,
                             ),
                           ),
-
-                          const SizedBox(height: 20),
-
-                          _GameModeCard(
-                            title: 'MEMORY MADNESS',
-                            subtitle: 'Pattern Memory Challenge',
-                            description: 'Remember increasingly complex sequences',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const MemorySelectScreen()),
+                          child: Text(
+                            'OR PLAY INDIVIDUAL GAMES:',
+                            style: GoogleFonts.chicle(
+                              fontSize: 16,
+                              color: Colors.white.withOpacity(0.9),
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
+                        ),
 
-                          const SizedBox(height: 20),
+                        const SizedBox(height: 20),
 
-                          _GameModeCard(
-                            title: 'MATCH MADNESS',
-                            subtitle: 'Speed Matching Challenge',
-                            description: 'Match psychedelic tarot cards at lightning speed',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const MatchSelectScreen()),
+                        // Individual game mode buttons
+                        Column(
+                          children: [
+                            _GameModeCard(
+                              title: 'MINUTE MADNESS',
+                              subtitle: 'Precision Timing Challenge',
+                              description: 'Hit the exact 3-second mark',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const DurationSelectScreen()),
+                              ),
                             ),
-                            isComingSoon: false,
-                          ),
 
-                          const SizedBox(height: 20),
+                            const SizedBox(height: 20),
 
-                          _GameModeCard(
-                            title: 'MOMENTUM MADNESS',
-                            subtitle: 'Momentum Building Challenge',
-                            description: 'Spin a wheel as it gets progressively faster',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const MomentumSelectScreen()),
+                            _GameModeCard(
+                              title: 'MEMORY MADNESS',
+                              subtitle: 'Pattern Memory Challenge',
+                              description: 'Remember increasingly complex sequences',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const MemorySelectScreen()),
+                              ),
                             ),
-                            isComingSoon: false,
-                          ),
 
-                          const SizedBox(height: 20),
+                            const SizedBox(height: 20),
 
-                          _GameModeCard(
-                            title: 'MAZE MADNESS',
-                            subtitle: 'Memory Navigation Challenge',
-                            description: 'Navigate psychedelic mazes from memory alone',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const MazeSelectScreen()),
+                            _GameModeCard(
+                              title: 'MATCH MADNESS',
+                              subtitle: 'Speed Matching Challenge',
+                              description: 'Match psychedelic tarot cards at lightning speed',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const MatchSelectScreen()),
+                              ),
                             ),
-                            isComingSoon: false,
-                          ),
 
-                          const SizedBox(height: 20),
+                            const SizedBox(height: 20),
 
-                          _GameModeCard(
-                            title: 'MORE COMING SOON',
-                            subtitle: 'New Challenges',
-                            description: 'Even more exciting tournaments',
-                            onTap: () => _showComingSoon(context, 'Future Games'),
-                            isComingSoon: true,
-                          ),
-                        ],
-                      ),
-                    ],
+                            _GameModeCard(
+                              title: 'MOMENTUM MADNESS',
+                              subtitle: 'Momentum Building Challenge',
+                              description: 'Spin a wheel as it gets progressively faster',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const MomentumSelectScreen()),
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            _GameModeCard(
+                              title: 'MAZE MADNESS',
+                              subtitle: 'Memory Navigation Challenge',
+                              description: 'Navigate psychedelic mazes from memory alone',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const MazeSelectScreen()),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 40), // ADDED: Bottom padding
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
           );
         },
-      ),
-    );
-  }
-
-  void _showComingSoon(BuildContext context, String gameName) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.purple.shade900,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Coming Soon!',
-          style: GoogleFonts.chicle(
-            fontSize: 20,
-            color: Colors.yellow,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        content: Text(
-          '$gameName is currently in development.\n\nStay tuned for epic tournaments!',
-          style: GoogleFonts.chicle(
-            fontSize: 16,
-            color: Colors.white,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'Got it!',
-              style: GoogleFonts.chicle(color: Colors.cyan),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -296,6 +290,7 @@ class _GameModeCard extends StatefulWidget {
   final String description;
   final VoidCallback onTap;
   final bool isComingSoon;
+  final bool isUltimate; // ADDED: Special flag for Ultimate Tournament
 
   const _GameModeCard({
     required this.title,
@@ -303,6 +298,7 @@ class _GameModeCard extends StatefulWidget {
     required this.description,
     required this.onTap,
     this.isComingSoon = false,
+    this.isUltimate = false, // ADDED: Default false
   });
 
   @override
@@ -323,7 +319,9 @@ class _GameModeCardState extends State<_GameModeCard>
     _nextCardColors = _generateCardGradient();
 
     _animController = AnimationController(
-      duration: const Duration(seconds: 3), // Slower than background for variation
+      duration: Duration(
+        milliseconds: widget.isUltimate ? 1500 : 3000, // FASTER for Ultimate Tournament
+      ),
       vsync: this,
     )..addStatusListener((status) {
       if (status == AnimationStatus.completed) {
@@ -336,24 +334,42 @@ class _GameModeCardState extends State<_GameModeCard>
 
   List<Color> _generateCardGradient() {
     final random = Random();
-    // Same vibrant colors as the background!
-    final vibrantColors = [
-      Colors.red.shade700,
-      Colors.orange.shade600,
-      Colors.yellow.shade500,
-      Colors.green.shade600,
-      Colors.blue.shade700,
-      Colors.indigo.shade600,
-      Colors.purple.shade700,
-      Colors.pink.shade600,
-      Colors.cyan.shade500,
-      Colors.lime.shade600,
-      Colors.deepOrange.shade700,
-      Colors.deepPurple.shade700,
-    ];
 
-    return List.generate(
-        4, (_) => vibrantColors[random.nextInt(vibrantColors.length)]);
+    if (widget.isUltimate) {
+      // ULTIMATE TOURNAMENT gets ALL the colors!
+      final ultimateColors = [
+        Colors.red.shade800,      // Precision
+        Colors.orange.shade700,   // Momentum
+        Colors.purple.shade800,   // Memory
+        Colors.pink.shade700,     // Match
+        Colors.blue.shade800,     // Maze
+        Colors.amber.shade600,     // Champion
+        Colors.cyan.shade600,
+        Colors.green.shade700,
+        Colors.yellow.shade600,
+      ];
+      return List.generate(
+          6, (_) => ultimateColors[random.nextInt(ultimateColors.length)]);
+    } else {
+      // Regular games get standard vibrant colors
+      final vibrantColors = [
+        Colors.red.shade700,
+        Colors.orange.shade600,
+        Colors.yellow.shade500,
+        Colors.green.shade600,
+        Colors.blue.shade700,
+        Colors.indigo.shade600,
+        Colors.purple.shade700,
+        Colors.pink.shade600,
+        Colors.cyan.shade500,
+        Colors.lime.shade600,
+        Colors.deepOrange.shade700,
+        Colors.deepPurple.shade700,
+      ];
+
+      return List.generate(
+          4, (_) => vibrantColors[random.nextInt(vibrantColors.length)]);
+    }
   }
 
   @override
@@ -381,19 +397,23 @@ class _GameModeCardState extends State<_GameModeCard>
           child: Container(
             width: double.infinity,
             margin: const EdgeInsets.symmetric(horizontal: 20),
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(widget.isUltimate ? 25 : 20), // BIGGER padding for Ultimate
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(25),
-              // PSYCHEDELIC BOX BACKGROUND!
-              gradient: widget.isComingSoon
-                  ? LinearGradient(
+              borderRadius: BorderRadius.circular(widget.isUltimate ? 30 : 25), // More rounded for Ultimate
+              // ULTIMATE TOURNAMENT gets special gradient!
+              gradient: widget.isUltimate
+                  ? RadialGradient(
                 colors: [
-                  Colors.grey.shade600.withOpacity(0.7),
-                  Colors.grey.shade700.withOpacity(0.5),
-                  Colors.grey.shade800.withOpacity(0.7),
+                  interpolatedColors[0].withOpacity(0.95),
+                  interpolatedColors[2].withOpacity(0.9),
+                  interpolatedColors[4].withOpacity(0.85),
+                  interpolatedColors[1].withOpacity(0.8),
+                  interpolatedColors[3].withOpacity(0.75),
+                  interpolatedColors[5].withOpacity(0.7),
                 ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                center: Alignment.center,
+                radius: 1.2,
+                stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
               )
                   : RadialGradient(
                 colors: interpolatedColors.map((c) => c.withOpacity(0.85)).toList(),
@@ -402,48 +422,65 @@ class _GameModeCardState extends State<_GameModeCard>
                 stops: [0.0, 0.4, 0.7, 1.0],
               ),
               border: Border.all(
-                color: widget.isComingSoon
-                    ? Colors.white.withOpacity(0.3)
+                color: widget.isUltimate
+                    ? Colors.white.withOpacity(0.9)  // BRIGHTER border for Ultimate
                     : Colors.white.withOpacity(0.6),
-                width: 2,
+                width: widget.isUltimate ? 4 : 2,   // THICKER border for Ultimate
               ),
-              boxShadow: [
-                if (!widget.isComingSoon) ...[
-                  BoxShadow(
-                    color: interpolatedColors[0].withOpacity(0.3),
-                    blurRadius: 15,
-                    offset: const Offset(0, 8),
-                  ),
-                  BoxShadow(
-                    color: interpolatedColors[2].withOpacity(0.2),
-                    blurRadius: 25,
-                    offset: const Offset(0, 0),
-                  ),
-                ] else ...[
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
+              boxShadow: widget.isUltimate ? [
+                // ULTIMATE gets MEGA glow!
+                BoxShadow(
+                  color: Colors.white.withOpacity(0.6),
+                  blurRadius: 30,
+                  spreadRadius: 8,
+                ),
+                BoxShadow(
+                  color: interpolatedColors[0].withOpacity(0.8),
+                  blurRadius: 40,
+                  spreadRadius: 6,
+                ),
+                BoxShadow(
+                  color: interpolatedColors[2].withOpacity(0.6),
+                  blurRadius: 50,
+                  spreadRadius: 4,
+                ),
+              ] : [
+                BoxShadow(
+                  color: interpolatedColors[0].withOpacity(0.3),
+                  blurRadius: 15,
+                  offset: const Offset(0, 8),
+                ),
+                BoxShadow(
+                  color: interpolatedColors[2].withOpacity(0.2),
+                  blurRadius: 25,
+                  offset: const Offset(0, 0),
+                ),
               ],
             ),
             child: Column(
               children: [
                 Row(
                   children: [
-                    // REPLACED EMOJI WITH GRADIENT CIRCLE AND ICON
+                    // ULTIMATE gets a special multi-colored icon!
                     Container(
-                      width: 48,
-                      height: 48,
+                      width: widget.isUltimate ? 60 : 48,  // BIGGER for Ultimate
+                      height: widget.isUltimate ? 60 : 48,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: widget.isComingSoon
-                            ? LinearGradient(
+                        gradient: widget.isUltimate
+                            ? SweepGradient(  // RAINBOW gradient for Ultimate!
                           colors: [
-                            Colors.grey.withOpacity(0.6),
-                            Colors.grey.shade700.withOpacity(0.4),
+                            Colors.red,
+                            Colors.orange,
+                            Colors.yellow,
+                            Colors.green,
+                            Colors.blue,
+                            Colors.indigo,
+                            Colors.purple,
+                            Colors.pink,
+                            Colors.red,
                           ],
+                          transform: GradientRotation(_animController.value * 6.28),
                         )
                             : RadialGradient(
                           colors: [
@@ -453,21 +490,28 @@ class _GameModeCardState extends State<_GameModeCard>
                           ],
                         ),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.6),
-                          width: 2,
+                          color: Colors.white.withOpacity(0.8),
+                          width: widget.isUltimate ? 3 : 2,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.white.withOpacity(0.3),
-                            blurRadius: 10,
-                            spreadRadius: 2,
+                            color: Colors.white.withOpacity(widget.isUltimate ? 0.6 : 0.3),
+                            blurRadius: widget.isUltimate ? 20 : 10,
+                            spreadRadius: widget.isUltimate ? 4 : 2,
                           ),
                         ],
                       ),
                       child: Icon(
                         _getIconForTitle(widget.title),
-                        size: 24,
-                        color: widget.isComingSoon ? Colors.white54 : Colors.white,
+                        size: widget.isUltimate ? 32 : 24,  // BIGGER icon for Ultimate
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.8),
+                            blurRadius: 3,
+                            offset: const Offset(1, 1),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 15),
@@ -475,8 +519,44 @@ class _GameModeCardState extends State<_GameModeCard>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // RAINBOW TITLE FOR EACH GAME MODE
-                          widget.title.contains('MADNESS') && !widget.isComingSoon
+                          // ULTIMATE TOURNAMENT gets MEGA rainbow title!
+                          widget.isUltimate
+                              ? ShaderMask(
+                            shaderCallback: (bounds) => LinearGradient(
+                              colors: [
+                                Colors.red,
+                                Colors.orange,
+                                Colors.yellow,
+                                Colors.green,
+                                Colors.blue,
+                                Colors.indigo,
+                                Colors.purple,
+                                Colors.pink,
+                                Colors.amber,
+                                Colors.cyan,
+                              ],
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              transform: GradientRotation(_animController.value * 2.0),
+                            ).createShader(bounds),
+                            blendMode: BlendMode.srcIn,
+                            child: Text(
+                              widget.title,
+                              style: GoogleFonts.chicle(
+                                fontSize: 24,  // BIGGER text for Ultimate
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black.withOpacity(0.9),
+                                    blurRadius: 6,
+                                    offset: const Offset(3, 3),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                              : widget.title.contains('MADNESS')
                               ? ShaderMask(
                             shaderCallback: (bounds) => const LinearGradient(
                               colors: [
@@ -513,7 +593,7 @@ class _GameModeCardState extends State<_GameModeCard>
                             widget.title,
                             style: GoogleFonts.chicle(
                               fontSize: 20,
-                              color: widget.isComingSoon ? Colors.white54 : Colors.white,
+                              color: Colors.white,
                               fontWeight: FontWeight.bold,
                               shadows: [
                                 Shadow(
@@ -527,8 +607,9 @@ class _GameModeCardState extends State<_GameModeCard>
                           Text(
                             widget.subtitle,
                             style: GoogleFonts.chicle(
-                              fontSize: 14,
-                              color: widget.isComingSoon ? Colors.white38 : Colors.white.withOpacity(0.9),
+                              fontSize: widget.isUltimate ? 16 : 14,  // BIGGER subtitle for Ultimate
+                              color: Colors.white.withOpacity(0.9),
+                              fontWeight: widget.isUltimate ? FontWeight.bold : FontWeight.normal,
                               shadows: [
                                 Shadow(
                                   color: Colors.black.withOpacity(0.6),
@@ -541,27 +622,47 @@ class _GameModeCardState extends State<_GameModeCard>
                         ],
                       ),
                     ),
-                    if (widget.isComingSoon)
+
+                    // ULTIMATE gets special crown badge!
+                    if (widget.isUltimate)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.9),
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.amber.withOpacity(0.9),
+                              Colors.yellow.withOpacity(0.8),
+                              Colors.orange.withOpacity(0.9),
+                            ],
+                          ),
                           borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: Colors.white.withOpacity(0.8), width: 2),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.orange.withOpacity(0.5),
-                              blurRadius: 8,
+                              color: Colors.amber.withOpacity(0.6),
+                              blurRadius: 10,
                               spreadRadius: 2,
                             ),
                           ],
                         ),
-                        child: Text(
-                          'SOON',
-                          style: GoogleFonts.chicle(
-                            fontSize: 12,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.emoji_events,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'ULTIMATE',
+                              style: GoogleFonts.chicle(
+                                fontSize: 12,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                   ],
@@ -570,8 +671,9 @@ class _GameModeCardState extends State<_GameModeCard>
                 Text(
                   widget.description,
                   style: GoogleFonts.chicle(
-                    fontSize: 14,
-                    color: widget.isComingSoon ? Colors.white38 : Colors.white.withOpacity(0.95),
+                    fontSize: widget.isUltimate ? 16 : 14,  // BIGGER description for Ultimate
+                    color: Colors.white.withOpacity(0.95),
+                    fontWeight: widget.isUltimate ? FontWeight.w600 : FontWeight.normal,
                     shadows: [
                       Shadow(
                         color: Colors.black.withOpacity(0.7),
@@ -593,14 +695,18 @@ class _GameModeCardState extends State<_GameModeCard>
   // Helper method to get appropriate icon based on title
   IconData _getIconForTitle(String title) {
     switch (title.toLowerCase()) {
+      case 'ultimate tournament':
+        return Icons.emoji_events;  // Crown for Ultimate Tournament
       case 'minute madness':
         return Icons.timer;
       case 'memory madness':
         return Icons.psychology;
       case 'match madness':
-        return Icons.gps_fixed; // Use gps_fixed instead of target
+        return Icons.gps_fixed;
       case 'momentum madness':
         return Icons.rotate_right;
+      case 'maze madness':
+        return Icons.explore;
       default:
         return Icons.games;
     }

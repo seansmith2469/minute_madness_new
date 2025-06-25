@@ -13,8 +13,8 @@ import '../screens/memory_game_screen.dart';
 import '../screens/match_game_screen.dart';
 import '../screens/maze_game_screen.dart';
 import 'ultimate_tournament_results_screen.dart';
+import '../models/game_type.dart';
 
-enum GameType { precision, momentum, memory, match, maze }
 
 class UltimateTournamentGameScreen extends StatefulWidget {
   final String tourneyId;
@@ -376,7 +376,7 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
                       colors: [
-                        Colors.gold.withOpacity(0.9),
+                        Colors.amber.withOpacity(0.9),
                         Colors.orange.withOpacity(0.7),
                         Colors.red.withOpacity(0.5),
                       ],
@@ -401,7 +401,7 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
           const SizedBox(height: 40),
           ShaderMask(
             shaderCallback: (bounds) => LinearGradient(
-              colors: [Colors.gold, Colors.orange, Colors.red],
+              colors: [Colors.amber, Colors.orange, Colors.red],
             ).createShader(bounds),
             child: Text(
               'PREPARING ULTIMATE TOURNAMENT',
@@ -532,7 +532,7 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
                   'ALL GAMES COMPLETE!',
                   style: GoogleFonts.creepster(
                     fontSize: 32,
-                    color: Colors.gold,
+                    color: Colors.amber,
                     fontWeight: FontWeight.bold,
                   ),
                 ),

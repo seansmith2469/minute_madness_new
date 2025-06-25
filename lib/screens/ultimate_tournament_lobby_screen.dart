@@ -8,8 +8,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../main.dart' show psychedelicPalette, backgroundSwapDuration;
 import '../services/ultimate_tournament_service.dart';
 import 'ultimate_tournament_game_screen.dart';
+import '../models/game_type.dart';
 
-enum GameType { precision, momentum, memory, match, maze }
 
 class UltimateTournamentLobbyScreen extends StatefulWidget {
   const UltimateTournamentLobbyScreen({super.key});
@@ -492,7 +492,7 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
                                       gradient: RadialGradient(
                                         colors: [
                                           Colors.white.withOpacity(0.9),
-                                          Colors.gold.withOpacity(0.8),
+                                          Colors.amber.withOpacity(0.8),
                                           Colors.orange.withOpacity(0.6),
                                         ],
                                       ),
@@ -1063,7 +1063,7 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
                             shape: BoxShape.circle,
                             gradient: RadialGradient(
                               colors: [
-                                Colors.gold.withOpacity(0.9),
+                                Colors.amber.withOpacity(0.9),
                                 Colors.orange.withOpacity(0.8),
                                 Colors.red.withOpacity(0.7),
                               ],
@@ -1089,7 +1089,7 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
                   ShaderMask(
                     shaderCallback: (bounds) => LinearGradient(
                       colors: [
-                        Colors.gold,
+                        Colors.amber,
                         Colors.orange,
                         Colors.red,
                         Colors.purple,
