@@ -1,4 +1,4 @@
-// lib/screens/maze_results_screen.dart - MAZE MADNESS SURVIVAL RESULTS
+// lib/screens/maze_results_screen.dart - FIXED MAZE MADNESS SURVIVAL RESULTS
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -151,23 +151,62 @@ class _MazeResultsScreenState extends State<MazeResultsScreen>
 
   Future<void> _loadResults() async {
     try {
-      final resultsSnap = await _db
-          .collection('maze_survival')
-          .doc(widget.survivalId)
-          .collection('results')
-          .get();
+      print('🧩 Loading all results for round ${widget.playerRound}');
 
-      _allResults = resultsSnap.docs.map((doc) {
-        final data = doc.data();
-        return {
-          'uid': doc.id,
-          'completed': data['completed'] ?? false,
-          'completionTimeMs': data['completionTimeMs'] ?? 999999,
-          'wrongMoves': data['wrongMoves'] ?? 999,
-          'round': data['round'] ?? 1,
-          'isBot': data['isBot'] ?? false,
-        };
-      }).toList();
+      // Wait a moment for bot results to be submitted
+      await Future.delayed(const Duration(seconds: 2));
+
+      // Keep trying to load results until we have a reasonable number
+      int attempts = 0;
+      const maxAttempts = 10; // Try for up to 10 seconds
+
+      while (attempts < maxAttempts) {
+        final resultsSnap = await _db
+            .collection('maze_survival')
+            .doc(widget.survivalId)
+            .collection('results')
+            .where('round', isEqualTo: widget.playerRound) // FIXED: Filter by current round
+            .get();
+
+        _allResults = resultsSnap.docs.map((doc) {
+          final data = doc.data();
+          return {
+            'uid': doc.id.split('_round_')[0], // Extract UID from document ID
+            'completed': data['completed'] ?? false,
+            'completionTimeMs': data['completionTimeMs'] ?? 999999,
+            'wrongMoves': data['wrongMoves'] ?? 999,
+            'round': data['round'] ?? 1,
+            'isBot': data['isBot'] ?? false,
+          };
+        }).toList();
+
+        print('🧩 Attempt ${attempts + 1}: Found ${_allResults.length} results for round ${widget.playerRound}');
+
+        // If we have a reasonable number of results (at least 20), proceed
+        if (_allResults.length >= 20) {
+          break;
+        }
+
+        // Wait before trying again
+        await Future.delayed(const Duration(seconds: 1));
+        attempts++;
+      }
+
+      // Ensure player result is included even if not found in database
+      final playerResultExists = _allResults.any((result) => result['uid'] == _uid);
+      if (!playerResultExists) {
+        print('🧩 Adding player result manually');
+        _allResults.add({
+          'uid': _uid,
+          'completed': widget.completed,
+          'completionTimeMs': widget.completionTime,
+          'wrongMoves': widget.wrongMoves,
+          'round': widget.playerRound,
+          'isBot': false,
+        });
+      }
+
+      print('🧩 Final results loaded: ${_allResults.length} total for round ${widget.playerRound}');
 
       // Find player result
       _playerResult = _allResults.firstWhere(
@@ -212,36 +251,143 @@ class _MazeResultsScreenState extends State<MazeResultsScreen>
     }
   }
 
+  // FIXED: Calculate survival status per round with proper tournament brackets and advancement logic
   void _calculateSurvivalStatus() {
-    // Sort by performance: completed first, then by time + penalties
-    _allResults.sort((a, b) {
+    // Filter results for the current round only
+    final currentRoundResults = _allResults.where((r) => r['round'] == widget.playerRound).toList();
+
+    print('🧩 Found ${currentRoundResults.length} results for round ${widget.playerRound}');
+
+    // If we don't have enough results, don't calculate rankings yet
+    if (currentRoundResults.length < 10) {
+      print('🧩 Not enough results yet, using placeholder values');
+      _playerRank = 0;
+      _playersRemaining = 0;
+      _playersEliminated = 0;
+      _playerAdvanced = widget.completed; // Base advancement on completion for now
+      return;
+    }
+
+    // EXPLICIT TOURNAMENT ADVANCEMENT CRITERIA:
+    // 1. Players who completed the maze advance
+    // 2. Ranked by: Fewest wrong moves first, then fastest time
+    // 3. Only top 50% advance to next round (64→32→16→8→4→2→1)
+
+    currentRoundResults.sort((a, b) {
       final aCompleted = a['completed'] as bool;
       final bCompleted = b['completed'] as bool;
 
+      // Failed players are automatically eliminated
       if (aCompleted && !bCompleted) return -1;
       if (!aCompleted && bCompleted) return 1;
 
-      if (aCompleted && bCompleted) {
-        // Both completed - sort by time + wrong moves penalty
-        final aScore = (a['completionTimeMs'] as int) + ((a['wrongMoves'] as int) * 1000);
-        final bScore = (b['completionTimeMs'] as int) + ((b['wrongMoves'] as int) * 1000);
-        return aScore.compareTo(bScore);
+      if (!aCompleted && !bCompleted) {
+        // Both failed - rank by time survived (longer = better rank, but still eliminated)
+        return (b['completionTimeMs'] as int).compareTo(a['completionTimeMs'] as int);
       }
 
-      // Both failed - sort by time (lasted longer = better)
-      return (b['completionTimeMs'] as int).compareTo(a['completionTimeMs'] as int);
+      // Both completed - RANK BY: 1) Fewer mistakes, 2) Faster time
+      final aWrongMoves = a['wrongMoves'] as int;
+      final bWrongMoves = b['wrongMoves'] as int;
+
+      if (aWrongMoves != bWrongMoves) {
+        return aWrongMoves.compareTo(bWrongMoves); // Fewer mistakes = better rank
+      }
+
+      // Same mistakes - faster time wins
+      return (a['completionTimeMs'] as int).compareTo(b['completionTimeMs'] as int);
     });
 
-    // Find player rank
-    _playerRank = _allResults.indexWhere((result) => result['uid'] == _uid) + 1;
+    // Find player rank in THIS round
+    _playerRank = currentRoundResults.indexWhere((result) => result['uid'] == _uid) + 1;
 
-    // Calculate advancement
-    final completedResults = _allResults.where((r) => r['completed'] as bool).toList();
-    _playersRemaining = completedResults.length;
-    _playersEliminated = _allResults.length - _playersRemaining;
-    _playerAdvanced = widget.completed;
+    // Handle case where player not found in results
+    if (_playerRank == 0) {
+      print('🧩 Player not found in results, adding manually for ranking');
+      currentRoundResults.add({
+        'uid': _uid,
+        'completed': widget.completed,
+        'completionTimeMs': widget.completionTime,
+        'wrongMoves': widget.wrongMoves,
+        'round': widget.playerRound,
+        'isBot': false,
+      });
+
+      // Re-sort with player included
+      currentRoundResults.sort((a, b) {
+        final aCompleted = a['completed'] as bool;
+        final bCompleted = b['completed'] as bool;
+
+        if (aCompleted && !bCompleted) return -1;
+        if (!aCompleted && bCompleted) return 1;
+
+        if (!aCompleted && !bCompleted) {
+          return (b['completionTimeMs'] as int).compareTo(a['completionTimeMs'] as int);
+        }
+
+        final aWrongMoves = a['wrongMoves'] as int;
+        final bWrongMoves = b['wrongMoves'] as int;
+
+        if (aWrongMoves != bWrongMoves) {
+          return aWrongMoves.compareTo(bWrongMoves);
+        }
+
+        return (a['completionTimeMs'] as int).compareTo(b['completionTimeMs'] as int);
+      });
+
+      _playerRank = currentRoundResults.indexWhere((result) => result['uid'] == _uid) + 1;
+    }
+
+    // Tournament bracket advancement logic
+    final expectedPlayers = _getExpectedPlayersForRound(widget.playerRound);
+    final advancingPlayers = _getAdvancingPlayersForRound(widget.playerRound);
+
+    // Only players who completed AND are in top 50% advance
+    final completedResults = currentRoundResults.where((r) => r['completed'] as bool).toList();
+    final actualAdvancing = math.min(completedResults.length, advancingPlayers);
+
+    _playersRemaining = actualAdvancing;
+    _playersEliminated = currentRoundResults.length - actualAdvancing;
+
+    // Player advances if they completed AND are ranked high enough
+    _playerAdvanced = widget.completed && _playerRank <= advancingPlayers;
+
+    print('🧩 Round ${widget.playerRound} bracket:');
+    print('🧩 - Total players: ${currentRoundResults.length}');
+    print('🧩 - Completed maze: ${completedResults.length}');
+    print('🧩 - Advancing (top $advancingPlayers): $actualAdvancing');
+    print('🧩 - Eliminated: $_playersEliminated');
+    print('🧩 - Player rank: $_playerRank/${currentRoundResults.length}');
+    print('🧩 - Player advanced: $_playerAdvanced');
   }
 
+  // Helper method to get expected players for each round
+  int _getExpectedPlayersForRound(int round) {
+    switch (round) {
+      case 1: return 64;  // Round 1: 64 players
+      case 2: return 32;  // Round 2: 32 players
+      case 3: return 16;  // Round 3: 16 players
+      case 4: return 8;   // Round 4: 8 players
+      case 5: return 4;   // Round 5: 4 players
+      case 6: return 2;   // Round 6: 2 players
+      default: return 64;
+    }
+  }
+
+  // Helper method to get how many advance from each round
+  int _getAdvancingPlayersForRound(int round) {
+    switch (round) {
+      case 1: return 32;  // Round 1: Top 32 advance
+      case 2: return 16;  // Round 2: Top 16 advance
+      case 3: return 8;   // Round 3: Top 8 advance
+      case 4: return 4;   // Round 4: Top 4 advance
+      case 5: return 2;   // Round 5: Top 2 advance
+      case 6: return 1;   // Round 6: 1 winner
+      default: return 32;
+    }
+  }
+
+  // FIXED: Proper survival completion logic
   Future<void> _checkSurvivalStatus() async {
     try {
       final survivalDoc = await _db.collection('maze_survival').doc(widget.survivalId).get();
@@ -250,16 +396,29 @@ class _MazeResultsScreenState extends State<MazeResultsScreen>
       if (survivalData != null) {
         final currentRound = survivalData['round'] as int? ?? 1;
 
-        // Survival is complete if we're at round 6 or only 1 player remains
-        _survivalComplete = currentRound >= 6 || _playersRemaining <= 1;
+        // FIXED: Survival is only complete if we've finished ALL 6 rounds
+        // AND there's 1 or fewer players remaining
+        _survivalComplete = (currentRound >= 6 && _playersRemaining <= 1) ||
+            (_playersRemaining <= 1 && currentRound > 1);
+
+        print('🧩 Survival status check: Round $currentRound, $_playersRemaining remaining, Complete: $_survivalComplete');
       }
     } catch (e) {
-      print('Error checking survival status: $e');
+      print('🧩 Error checking survival status: $e');
     }
   }
 
+  // FIXED: Only start countdown if we haven't completed all rounds AND player advanced
   void _startNextRoundCountdown() {
-    if (widget.playerRound >= 6) return; // No more rounds
+    if (widget.playerRound >= 6) {
+      print('🧩 All rounds completed, checking for final victory');
+      return;
+    }
+
+    if (!_playerAdvanced) {
+      print('🧩 Player eliminated, no next round');
+      return;
+    }
 
     _nextRoundCountdown = 5; // 5 second countdown
     _nextRoundTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -274,17 +433,39 @@ class _MazeResultsScreenState extends State<MazeResultsScreen>
     });
   }
 
+  // FIXED: Navigation logic
   void _navigateToNextRound() {
+    final nextRound = widget.playerRound + 1;
+
+    if (nextRound > 6) {
+      print('🧩 No more rounds, staying on results');
+      return;
+    }
+
+    print('🧩 Advancing to round $nextRound');
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (_) => MazeGameScreen(
           isPractice: false,
           survivalId: widget.survivalId,
-          round: widget.playerRound + 1,
+          round: nextRound,
         ),
       ),
     );
+  }
+
+  // Helper method for status text
+  String _getStatusText() {
+    if (_survivalComplete && _playerAdvanced) {
+      return 'SURVIVAL CHAMPION!';
+    } else if (_playerAdvanced && widget.playerRound < 6) {
+      return 'Round ${widget.playerRound} Complete - Advancing to Round ${widget.playerRound + 1}';
+    } else if (_playerAdvanced && widget.playerRound >= 6) {
+      return 'Final Round Complete!';
+    } else {
+      return 'Eliminated in Round ${widget.playerRound}';
+    }
   }
 
   @override
@@ -750,7 +931,7 @@ class _MazeResultsScreenState extends State<MazeResultsScreen>
                                 Text(
                                   'Time: ${(widget.completionTime / 1000).toStringAsFixed(2)}s\n'
                                       'Wrong Moves: ${widget.wrongMoves}\n'
-                                      'Rank: #$_playerRank',
+                                      'Tournament Rank: #$_playerRank/${_getExpectedPlayersForRound(widget.playerRound)}',
                                   style: GoogleFonts.chicle(
                                     fontSize: 16,
                                     color: Colors.white.withOpacity(0.95),
@@ -766,11 +947,15 @@ class _MazeResultsScreenState extends State<MazeResultsScreen>
                                 ),
                                 const SizedBox(height: 10),
                                 Text(
-                                  '$_playersEliminated explorers eliminated\n'
-                                      '$_playersRemaining explorers advancing',
+                                  _playerAdvanced
+                                      ? '🎉 ADVANCING TO ${widget.playerRound < 6 ? 'ROUND ${widget.playerRound + 1}' : 'VICTORY'}! 🎉\n'
+                                      'Top ${_getAdvancingPlayersForRound(widget.playerRound)} advance (ranked by fewest mistakes, then speed)'
+                                      : '❌ ELIMINATED ❌\n'
+                                      'Only top ${_getAdvancingPlayersForRound(widget.playerRound)} advance to next round',
                                   style: GoogleFonts.chicle(
                                     fontSize: 14,
-                                    color: Colors.white.withOpacity(0.8),
+                                    color: _playerAdvanced ? Colors.green.shade200 : Colors.red.shade200,
+                                    fontWeight: FontWeight.bold,
                                     shadows: [
                                       Shadow(
                                         color: Colors.black.withOpacity(0.7),
@@ -1008,7 +1193,7 @@ class _MazeResultsScreenState extends State<MazeResultsScreen>
                                       '• Move carefully to avoid wrong turns'
                                       : 'Your maze exploration ends here.\n\n'
                                       'Final Stats:\n'
-                                      'Survival Rank: #$_playerRank\n'
+                                      'Round ${widget.playerRound} Rank: #$_playerRank\n'
                                       'Rounds Survived: ${widget.playerRound}\n'
                                       'Time: ${(widget.completionTime / 1000).toStringAsFixed(2)}s',
                                   style: GoogleFonts.chicle(

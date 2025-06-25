@@ -1,4 +1,4 @@
-// lib/screens/lobby_screen.dart - FIXED 10 SECOND COUNTER TO 64
+// lib/screens/lobby_screen.dart - FIXED 10 SECOND COUNTER TO 64 + RANDOM START
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -123,22 +123,27 @@ class _LobbyScreenState extends State<LobbyScreen>
       DocumentReference doc;
       if (snap.docs.isEmpty) {
         print('Creating new tournament (max $TOURNAMENT_SIZE players)');
+
+        // RANDOM STARTING PLAYER COUNT (1-64)
+        final random = math.Random();
+        final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1; // 1 to 64
+
         doc = await _db.collection('tournaments').add({
           'status': 'waiting',
           'round': 0,
           'players': [_uid],
-          'playerCount': 1,
+          'playerCount': randomStartCount, // CHANGED: Random instead of 1
           'maxPlayers': TOURNAMENT_SIZE, // Store max for consistency
           'createdAt': FieldValue.serverTimestamp(),
           'bots': <String, dynamic>{},
         });
         _tournamentCreatedTime = DateTime.now();
-        print('Created tournament with ID: ${doc.id}');
+        print('Created tournament with ID: ${doc.id}, starting with $randomStartCount players');
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = 1;
-            _displayedPlayerCount = 1;
+            _actualPlayerCount = randomStartCount; // CHANGED: Use random count
+            _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
           });
         }
         _startAutoFillTimer();
@@ -152,11 +157,16 @@ class _LobbyScreenState extends State<LobbyScreen>
         // Double-check we won't exceed limit
         if (currentCount >= TOURNAMENT_SIZE) {
           print('Tournament is full, creating new one instead');
+
+          // RANDOM STARTING PLAYER COUNT for full tournament case
+          final random = math.Random();
+          final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1;
+
           doc = await _db.collection('tournaments').add({
             'status': 'waiting',
             'round': 0,
             'players': [_uid],
-            'playerCount': 1,
+            'playerCount': randomStartCount, // CHANGED: Random instead of 1
             'maxPlayers': TOURNAMENT_SIZE,
             'createdAt': FieldValue.serverTimestamp(),
             'bots': <String, dynamic>{},
@@ -165,8 +175,8 @@ class _LobbyScreenState extends State<LobbyScreen>
           if (mounted) {
             setState(() {
               _tourneyId = doc.id;
-              _actualPlayerCount = 1;
-              _displayedPlayerCount = 1;
+              _actualPlayerCount = randomStartCount; // CHANGED: Use random count
+              _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
             });
           }
           _startAutoFillTimer();
@@ -200,22 +210,26 @@ class _LobbyScreenState extends State<LobbyScreen>
     } catch (e) {
       print('Error joining/creating tournament: $e');
       try {
+        // RANDOM STARTING PLAYER COUNT for fallback case
+        final random = math.Random();
+        final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1;
+
         final doc = await _db.collection('tournaments').add({
           'status': 'waiting',
           'round': 0,
           'players': [_uid],
-          'playerCount': 1,
+          'playerCount': randomStartCount, // CHANGED: Random instead of 1
           'maxPlayers': TOURNAMENT_SIZE,
           'createdAt': FieldValue.serverTimestamp(),
           'bots': <String, dynamic>{},
         });
         _tournamentCreatedTime = DateTime.now();
-        print('Created fallback tournament: ${doc.id}');
+        print('Created fallback tournament: ${doc.id} with $randomStartCount players');
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = 1;
-            _displayedPlayerCount = 1;
+            _actualPlayerCount = randomStartCount; // CHANGED: Use random count
+            _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
           });
         }
         _startAutoFillTimer();
@@ -294,11 +308,11 @@ class _LobbyScreenState extends State<LobbyScreen>
       final progressRatio = secondsElapsed / 10.0;
       targetCount = math.max(currentCount, (TOURNAMENT_SIZE * progressRatio).round());
 
-      // Ensure we hit key milestones
-      if (secondsElapsed >= 2 && targetCount < 16) targetCount = 16;   // 16 by 2 seconds
-      if (secondsElapsed >= 4 && targetCount < 32) targetCount = 32;   // 32 by 4 seconds
-      if (secondsElapsed >= 6 && targetCount < 48) targetCount = 48;   // 48 by 6 seconds
-      if (secondsElapsed >= 8 && targetCount < 56) targetCount = 56;   // 56 by 8 seconds
+      // UPDATED: Ensure we hit key milestones but never go below current count
+      if (secondsElapsed >= 2 && targetCount < 16) targetCount = math.max(currentCount, 16);   // 16 by 2 seconds
+      if (secondsElapsed >= 4 && targetCount < 32) targetCount = math.max(currentCount, 32);   // 32 by 4 seconds
+      if (secondsElapsed >= 6 && targetCount < 48) targetCount = math.max(currentCount, 48);   // 48 by 6 seconds
+      if (secondsElapsed >= 8 && targetCount < 56) targetCount = math.max(currentCount, 56);   // 56 by 8 seconds
       if (secondsElapsed >= 10) targetCount = TOURNAMENT_SIZE;         // 64 by 10 seconds
 
       print('${secondsElapsed}s: Target $targetCount players (progress: ${(progressRatio * 100).toInt()}%)');

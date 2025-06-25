@@ -50,7 +50,7 @@ class MazeBotService {
     'MazeEternal', 'RouteInfinity', 'PathCosmic', 'MazeQuantum', 'RoutePulse'
   ];
 
-  // Create and add bots to a survival - FIXED VERSION
+  // FIXED: Create and add bots to fill remaining slots only
   static Future<List<MazeBotPlayer>> addBotsToSurvival(String survivalId, int botCount) async {
     final bots = <MazeBotPlayer>[];
 
@@ -136,43 +136,47 @@ class MazeBotService {
     );
   }
 
-  // Submit bot results for a round - FIXED to include staggered delays
+  // FIXED: Submit bot results for a round with proper round tracking
   static Future<void> submitBotResults(String survivalId, int round, List<MazeBotPlayer> bots) async {
     if (bots.isEmpty) return;
 
     try {
       print('🧩 Submitting maze results for ${bots.length} bots in round $round');
 
-      // Submit each bot result with realistic delays
+      // Submit bot results in batches with staggered timing for realism
+      final futures = <Future>[];
+
       for (int i = 0; i < bots.length; i++) {
         final bot = bots[i];
 
-        // Realistic submission delays (2-8 seconds, spread out)
-        final delay = 2000 + (i * 100) + _random.nextInt(4000);
+        // Staggered delays (0-10 seconds) to simulate realistic submission timing
+        final delay = i * 100 + _random.nextInt(3000);
 
-        Timer(Duration(milliseconds: delay), () async {
+        final future = Future.delayed(Duration(milliseconds: delay), () async {
           try {
-            // Check if this bot already submitted to prevent duplicates
-            final existingResult = await _db
+            // Check if this bot already submitted for THIS ROUND
+            final resultId = '${bot.id}_round_$round';
+            final existingDoc = await _db
                 .collection('maze_survival')
                 .doc(survivalId)
                 .collection('results')
-                .doc(bot.id)
+                .doc(resultId)
                 .get();
 
-            if (existingResult.exists) {
-              print('🧩 Maze bot ${bot.name} already submitted - skipping');
+            if (existingDoc.exists) {
+              print('🧩 Maze bot ${bot.name} already submitted for round $round - skipping');
               return;
             }
 
             // Generate bot performance
             final result = _simulateMazePerformance(bot, round);
 
+            // Submit bot result
             await _db
                 .collection('maze_survival')
                 .doc(survivalId)
                 .collection('results')
-                .doc(bot.id)
+                .doc(resultId)
                 .set({
               'uid': bot.id,
               'completed': result['completed'],
@@ -189,10 +193,23 @@ class MazeBotService {
                 'in ${result['completionTimeMs']}ms with ${result['wrongMoves']} wrong moves');
 
           } catch (e) {
-            print('🧩 Error submitting maze bot result: $e');
+            print('🧩 Error submitting maze bot result for ${bot.name}: $e');
           }
         });
+
+        futures.add(future);
       }
+
+      // Wait for all bot submissions to complete (with timeout)
+      await Future.wait(futures).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          print('🧩 Bot result submission timeout after 30 seconds');
+          return [];
+        },
+      );
+
+      print('🧩 All bot results submitted for round $round');
 
     } catch (e) {
       print('🧩 Error in maze submitBotResults: $e');
@@ -356,7 +373,7 @@ class MazeBotService {
     }
   }
 
-  // Update bots for next round (remove eliminated bots)
+  // FIXED: Update bots for next round (remove eliminated bots)
   static Future<void> updateBotsForNextRound(String survivalId, List<String> eliminatedBotIds) async {
     if (eliminatedBotIds.isEmpty) return;
 
@@ -388,7 +405,7 @@ class MazeBotService {
     }
   }
 
-  // Cleanup eliminated bots from survival
+  // FIXED: Cleanup eliminated bots from survival
   static Future<void> cleanupEliminatedBots(
       String survivalId,
       List<String> advancingPlayerIds

@@ -1,4 +1,4 @@
-// lib/screens/maze_lobby_screen.dart - FIXED MAZE MADNESS LOBBY
+// lib/screens/maze_lobby_screen.dart - REALISTIC TOURNAMENT LOBBY
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -24,17 +24,22 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
   bool _isNavigating = false;
 
   // SURVIVAL CONSTANTS
-  static const int MAX_PLAYERS = 64; // Maximum allowed
+  static const int MAX_PLAYERS = 64;
 
-  // Bot management
+  // Player tracking - REALISTIC TOURNAMENT SIMULATION
   Timer? _fillTimer;
   Timer? _displayTimer;
   DateTime? _survivalCreatedTime;
   List<MazeBotPlayer> _survivalBots = [];
   int _displayedPlayerCount = 0;
   int _actualPlayerCount = 0;
+  int _realPlayerCount = 1;
+  int _adCountdown = 0;
+  bool _isShowingAd = false;
+  bool _isFilling = false;
+  int _startingPlayerCount = 0; // Random starting count to simulate ongoing tournament
 
-  // Animation controllers for INTENSE psychedelic effects
+  // Animation controllers
   late AnimationController _backgroundController;
   late AnimationController _pulsController;
   late AnimationController _rotationController;
@@ -46,7 +51,7 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
   void initState() {
     super.initState();
 
-    // Initialize INTENSE psychedelic background
+    // Initialize psychedelic background
     _currentColors = _generateGradient();
     _nextColors = _generateGradient();
 
@@ -102,47 +107,63 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
       final snap = await _db
           .collection('maze_survival')
           .where('status', isEqualTo: 'waiting')
-          .where('playerCount', isLessThan: MAX_PLAYERS)
+          .where('realPlayerCount', isLessThan: MAX_PLAYERS)
           .limit(1)
           .get();
 
       DocumentReference doc;
       if (snap.docs.isEmpty) {
-        print('🧩 Creating new maze survival (max $MAX_PLAYERS players)');
+        print('🧩 Creating new maze survival');
+
+        // REALISTIC: Start with random player count (10-50) to simulate ongoing tournament
+        final random = math.Random();
+        _startingPlayerCount = 10 + random.nextInt(41); // 10-50 players
+
         doc = await _db.collection('maze_survival').add({
           'status': 'waiting',
           'round': 0,
           'players': [_uid],
-          'playerCount': 1,
+          'playerCount': _startingPlayerCount + 1, // Include the real player
+          'realPlayers': [_uid],
+          'realPlayerCount': 1,
           'maxPlayers': MAX_PLAYERS,
           'createdAt': FieldValue.serverTimestamp(),
           'gameType': 'maze_madness',
           'bots': <String, dynamic>{},
         });
         _survivalCreatedTime = DateTime.now();
-        print('🧩 Created survival with ID: ${doc.id}');
+
+        print('🧩 Created survival with ID: ${doc.id}, simulating ${_startingPlayerCount + 1} players');
         if (mounted) {
           setState(() {
             _survivalId = doc.id;
-            _actualPlayerCount = 1;
-            _displayedPlayerCount = 1;
+            _actualPlayerCount = _startingPlayerCount + 1;
+            _displayedPlayerCount = _startingPlayerCount + 1;
+            _realPlayerCount = 1;
           });
         }
-        _startAutoFillTimer();
+        _startRealisticTournamentFill();
       } else {
         print('🧩 Joining existing maze survival');
         doc = snap.docs.first.reference;
 
         final survivalData = snap.docs.first.data() as Map<String, dynamic>;
-        final currentCount = survivalData['playerCount'] as int? ?? 1;
+        final realPlayerCount = survivalData['realPlayerCount'] as int? ?? 1;
+        final totalPlayerCount = survivalData['playerCount'] as int? ?? 1;
 
-        if (currentCount >= MAX_PLAYERS) {
-          print('🧩 Survival is full, creating new one instead');
+        if (realPlayerCount >= MAX_PLAYERS) {
+          print('🧩 Survival has max real players, creating new one');
+          // Create new survival with random starting count
+          final random = math.Random();
+          _startingPlayerCount = 10 + random.nextInt(41);
+
           doc = await _db.collection('maze_survival').add({
             'status': 'waiting',
             'round': 0,
             'players': [_uid],
-            'playerCount': 1,
+            'playerCount': _startingPlayerCount + 1,
+            'realPlayers': [_uid],
+            'realPlayerCount': 1,
             'maxPlayers': MAX_PLAYERS,
             'createdAt': FieldValue.serverTimestamp(),
             'gameType': 'maze_madness',
@@ -152,17 +173,21 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
           if (mounted) {
             setState(() {
               _survivalId = doc.id;
-              _actualPlayerCount = 1;
-              _displayedPlayerCount = 1;
+              _actualPlayerCount = _startingPlayerCount + 1;
+              _displayedPlayerCount = _startingPlayerCount + 1;
+              _realPlayerCount = 1;
             });
           }
-          _startAutoFillTimer();
+          _startRealisticTournamentFill();
           return;
         }
 
+        // Join existing survival
         await doc.update({
           'players': FieldValue.arrayUnion([_uid]),
           'playerCount': FieldValue.increment(1),
+          'realPlayers': FieldValue.arrayUnion([_uid]),
+          'realPlayerCount': FieldValue.increment(1),
         });
 
         if (survivalData.containsKey('createdAt') && survivalData['createdAt'] != null) {
@@ -172,165 +197,169 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
           _survivalCreatedTime = DateTime.now();
         }
 
-        print('🧩 Joined survival ${doc.id} with ${currentCount + 1} players');
+        print('🧩 Joined survival ${doc.id} with ${totalPlayerCount + 1} total players (${realPlayerCount + 1} real)');
 
         if (mounted) {
           setState(() {
             _survivalId = doc.id;
-            _actualPlayerCount = currentCount + 1;
-            _displayedPlayerCount = currentCount + 1;
+            _actualPlayerCount = totalPlayerCount + 1;
+            _displayedPlayerCount = totalPlayerCount + 1;
+            _realPlayerCount = realPlayerCount + 1;
           });
         }
 
-        _startAutoFillTimer();
+        _startRealisticTournamentFill();
       }
     } catch (e) {
       print('🧩 Error joining/creating maze survival: $e');
+      // Fallback
       try {
+        final random = math.Random();
+        _startingPlayerCount = 10 + random.nextInt(41);
+
         final doc = await _db.collection('maze_survival').add({
           'status': 'waiting',
           'round': 0,
           'players': [_uid],
-          'playerCount': 1,
+          'playerCount': _startingPlayerCount + 1,
+          'realPlayers': [_uid],
+          'realPlayerCount': 1,
           'maxPlayers': MAX_PLAYERS,
           'createdAt': FieldValue.serverTimestamp(),
           'gameType': 'maze_madness',
           'bots': <String, dynamic>{},
         });
         _survivalCreatedTime = DateTime.now();
-        print('🧩 Created fallback survival: ${doc.id}');
+        print('🧩 Created fallback survival: ${doc.id} with ${_startingPlayerCount + 1} players');
         if (mounted) {
           setState(() {
             _survivalId = doc.id;
-            _actualPlayerCount = 1;
-            _displayedPlayerCount = 1;
+            _actualPlayerCount = _startingPlayerCount + 1;
+            _displayedPlayerCount = _startingPlayerCount + 1;
+            _realPlayerCount = 1;
           });
         }
-        _startAutoFillTimer();
+        _startRealisticTournamentFill();
       } catch (e2) {
         print('🧩 Failed to create fallback survival: $e2');
       }
     }
   }
 
-  void _startAutoFillTimer() {
+  // REALISTIC: Simulate tournament filling up naturally
+  void _startRealisticTournamentFill() {
     if (_survivalCreatedTime == null) return;
 
-    print('🧩 Starting auto-fill timer for maze survival $_survivalId (max $MAX_PLAYERS)');
+    print('🧩 Starting realistic tournament fill simulation');
+    _isFilling = true;
 
-    _fillTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      _checkAndAddBots();
-    });
-
-    _startGradualDisplay();
-
-    Timer(const Duration(seconds: 20), () {
-      print('🧩 20 seconds reached - force starting survival');
-      _forceStartSurvival();
-    });
-  }
-
-  void _startGradualDisplay() {
-    _displayTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      if (_displayedPlayerCount < _actualPlayerCount) {
+    // Gradual counter increase to 64
+    _fillTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
+      if (_displayedPlayerCount < MAX_PLAYERS) {
         setState(() {
-          final remaining = _actualPlayerCount - _displayedPlayerCount;
-          final increment = remaining > 30 ? 3 : remaining > 10 ? 2 : 1;
-          _displayedPlayerCount = math.min(_displayedPlayerCount + increment, _actualPlayerCount);
+          final remaining = MAX_PLAYERS - _displayedPlayerCount;
+          // Faster increase as we get closer to full
+          final increment = remaining > 30 ? math.Random().nextInt(3) + 1 :
+          remaining > 10 ? math.Random().nextInt(2) + 1 : 1;
+          _displayedPlayerCount = math.min(_displayedPlayerCount + increment, MAX_PLAYERS);
         });
+      }
+
+      if (_displayedPlayerCount >= MAX_PLAYERS) {
+        timer.cancel();
+        _fillComplete();
+      }
+    });
+
+    // Backup timer in case we need to force completion
+    Timer(const Duration(seconds: 15), () {
+      if (_displayedPlayerCount < MAX_PLAYERS) {
+        setState(() {
+          _displayedPlayerCount = MAX_PLAYERS;
+        });
+        _fillComplete();
       }
     });
   }
 
-  Future<void> _checkAndAddBots() async {
-    if (_survivalId == null || _survivalCreatedTime == null) {
-      print('🧩 No survival ID or creation time');
-      return;
-    }
+  // When tournament is full, add bots silently and show ad
+  Future<void> _fillComplete() async {
+    if (_survivalId == null) return;
 
-    final waitTime = DateTime.now().difference(_survivalCreatedTime!);
-    final secondsElapsed = waitTime.inSeconds;
+    try {
+      _isFilling = false;
 
-    final survivalDoc = await _db.collection('maze_survival').doc(_survivalId!).get();
-    final data = survivalDoc.data();
-    if (data == null) {
-      print('🧩 No survival data found');
-      return;
-    }
+      // Silently add bots to match the displayed count
+      final survivalDoc = await _db.collection('maze_survival').doc(_survivalId!).get();
+      final data = survivalDoc.data();
+      if (data == null) return;
 
-    final currentCount = data['playerCount'] as int? ?? 0;
-    final status = data['status'] as String? ?? 'waiting';
+      final currentTotalCount = data['playerCount'] as int? ?? 0;
 
-    print('🧩 Current count: $currentCount/$MAX_PLAYERS, Status: $status, Elapsed: ${secondsElapsed}s');
+      // Add bots to reach exactly 64 (silently, no mention of bots)
+      if (currentTotalCount < MAX_PLAYERS) {
+        final botsNeeded = MAX_PLAYERS - currentTotalCount;
+        print('🧩 Silently adding $botsNeeded participants to reach $MAX_PLAYERS total');
 
-    if (status != 'waiting' || currentCount >= MAX_PLAYERS) {
-      print('🧩 Survival not waiting or already full');
-      return;
-    }
-
-    int targetCount = currentCount;
-
-    if (secondsElapsed <= 10) {
-      final progressRatio = secondsElapsed / 10.0;
-      targetCount = math.max(currentCount, (MAX_PLAYERS * progressRatio).round());
-
-      if (secondsElapsed >= 2 && targetCount < 16) targetCount = 16;
-      if (secondsElapsed >= 4 && targetCount < 32) targetCount = 32;
-      if (secondsElapsed >= 6 && targetCount < 48) targetCount = 48;
-      if (secondsElapsed >= 8 && targetCount < 56) targetCount = 56;
-      if (secondsElapsed >= 10) targetCount = MAX_PLAYERS;
-
-      print('🧩 ${secondsElapsed}s: Target $targetCount players (progress: ${(progressRatio * 100).toInt()}%)');
-    }
-
-    if (targetCount > currentCount && currentCount < MAX_PLAYERS) {
-      final botsToAdd = math.min(targetCount - currentCount, MAX_PLAYERS - currentCount);
-      print('🧩 Adding $botsToAdd bots to reach $targetCount (current: $currentCount)');
-      try {
-        final newBots = await MazeBotService.addBotsToSurvival(_survivalId!, botsToAdd);
+        final newBots = await MazeBotService.addBotsToSurvival(_survivalId!, botsNeeded);
         _survivalBots.addAll(newBots);
-        print('🧩 Successfully added ${newBots.length} bots');
 
         if (mounted) {
           setState(() {
-            _actualPlayerCount = math.min(targetCount, MAX_PLAYERS);
+            _actualPlayerCount = MAX_PLAYERS;
           });
         }
-      } catch (e) {
-        print('🧩 Error adding bots: $e');
       }
+
+      // Show ad countdown
+      await _showAdCountdown();
+
+      // Start the tournament
+      await _startTournament();
+
+    } catch (e) {
+      print('🧩 Error completing tournament fill: $e');
     }
   }
 
-  Future<void> _forceStartSurvival() async {
-    if (_survivalId == null) return;
+  Future<void> _showAdCountdown() async {
+    print('🧩 Starting 15-second ad countdown');
 
-    final survivalDoc = await _db.collection('maze_survival').doc(_survivalId!).get();
-    final data = survivalDoc.data();
-    if (data == null) return;
-
-    final currentCount = data['playerCount'] as int? ?? 0;
-    final status = data['status'] as String? ?? 'waiting';
-
-    if (status != 'waiting') return;
-
-    if (currentCount < MAX_PLAYERS) {
-      final botsToAdd = MAX_PLAYERS - currentCount;
-      print('🧩 Force filling with $botsToAdd bots to reach exactly $MAX_PLAYERS players');
-      final newBots = await MazeBotService.addBotsToSurvival(_survivalId!, botsToAdd);
-      _survivalBots.addAll(newBots);
+    if (mounted) {
+      setState(() {
+        _isShowingAd = true;
+        _adCountdown = 15;
+      });
     }
 
-    final finalDoc = await _db.collection('maze_survival').doc(_survivalId!).get();
-    final finalData = finalDoc.data();
-    final finalCount = finalData?['playerCount'] as int? ?? 0;
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _adCountdown--;
+        });
+      }
 
-    print('🧩 Final verification: $finalCount players before starting survival');
+      if (_adCountdown <= 0) {
+        timer.cancel();
+        if (mounted) {
+          setState(() {
+            _isShowingAd = false;
+          });
+        }
+      }
+    });
+
+    await Future.delayed(const Duration(seconds: 15));
+  }
+
+  Future<void> _startTournament() async {
+    if (_survivalId == null) return;
+
+    print('🧩 Starting tournament with 64 participants');
 
     await _db.collection('maze_survival').doc(_survivalId!).update({
       'status': 'round',
       'round': 1,
-      'finalPlayerCount': finalCount,
       'startedAt': FieldValue.serverTimestamp(),
     });
   }
@@ -379,37 +408,26 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
         print('🧩 StreamBuilder update - hasData: ${snap.hasData}');
 
         if (!snap.hasData) {
-          print('🧩 No snapshot data, showing loading screen');
           return _buildLoadingScreen();
         }
 
         final data = snap.data!.data();
         if (data == null) {
-          print('🧩 Snapshot data is null, showing error screen');
           return _buildErrorScreen();
         }
 
         final survivalData = data as Map<String, dynamic>;
         final status = survivalData['status'] as String? ?? 'waiting';
-        final count = survivalData['playerCount'] as int? ?? 0;
         final round = survivalData['round'] as int? ?? 0;
 
-        print('🧩 Survival status: $status, count: $count/$MAX_PLAYERS, round: $round');
-
-        if (_actualPlayerCount != count) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              setState(() {
-                _actualPlayerCount = math.min(count, MAX_PLAYERS);
-              });
-            }
-          });
-        }
+        print('🧩 Survival status: $status, displayed players: $_displayedPlayerCount/$MAX_PLAYERS, round: $round');
 
         switch (status) {
           case 'waiting':
-            print('🧩 Status is waiting, showing waiting screen with $_displayedPlayerCount players');
-            return _buildWaitingScreen(math.min(_displayedPlayerCount, MAX_PLAYERS));
+            if (_isShowingAd || _adCountdown > 0) {
+              return _buildAdCountdownScreen();
+            }
+            return _buildWaitingScreen(_displayedPlayerCount);
 
           case 'round':
             print('🧩 Status is round, navigating to game (round $round)');
@@ -419,7 +437,6 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
             return _buildStartingScreen();
 
           default:
-            print('🧩 Unknown status: $status, showing error screen');
             return _buildErrorScreen();
         }
       },
@@ -442,7 +459,6 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
 
           return Stack(
             children: [
-              // PSYCHEDELIC BACKGROUND
               Container(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
@@ -453,8 +469,6 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                   ),
                 ),
               ),
-
-              // ROTATING OVERLAY
               AnimatedBuilder(
                 animation: _rotationController,
                 builder: (context, child) {
@@ -476,13 +490,10 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                   );
                 },
               ),
-
-              // MAIN CONTENT
               Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // SPINNING MAZE ICON
                     AnimatedBuilder(
                       animation: _rotationController,
                       builder: (context, child) {
@@ -521,11 +532,6 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                                         blurRadius: 30,
                                         spreadRadius: 10,
                                       ),
-                                      BoxShadow(
-                                        color: interpolatedColors[1].withOpacity(0.8),
-                                        blurRadius: 50,
-                                        spreadRadius: 5,
-                                      ),
                                     ],
                                   ),
                                   child: Container(
@@ -553,10 +559,7 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                         );
                       },
                     ),
-
                     const SizedBox(height: 40),
-
-                    // LOADING TEXT
                     AnimatedBuilder(
                       animation: _pulsController,
                       builder: (context, child) {
@@ -580,7 +583,7 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                               transform: GradientRotation(_rotationController.value * 3.14),
                             ).createShader(bounds),
                             child: Text(
-                              'CREATING MAZE SURVIVAL',
+                              'JOINING TOURNAMENT',
                               style: GoogleFonts.creepster(
                                 fontSize: 28,
                                 color: Colors.white,
@@ -603,8 +606,6 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                   ],
                 ),
               ),
-
-              // BACK BUTTON
               Positioned(
                 top: 40,
                 left: 20,
@@ -638,7 +639,7 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
     );
   }
 
-  Widget _buildWaitingScreen(int count) {
+  Widget _buildWaitingScreen(int playerCount) {
     return Scaffold(
       body: AnimatedBuilder(
         animation: _backgroundController,
@@ -654,7 +655,6 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
 
           return Stack(
             children: [
-              // PSYCHEDELIC BACKGROUND
               Container(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
@@ -665,8 +665,6 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                   ),
                 ),
               ),
-
-              // MULTIPLE ROTATING OVERLAYS
               AnimatedBuilder(
                 animation: _rotationController,
                 builder: (context, child) {
@@ -690,37 +688,11 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                   );
                 },
               ),
-
-              // COUNTER-ROTATING OVERLAY
-              AnimatedBuilder(
-                animation: _rotationController,
-                builder: (context, child) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[2].withOpacity(0.4),
-                          Colors.transparent,
-                          interpolatedColors[4].withOpacity(0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topRight,
-                        end: Alignment.bottomLeft,
-                        transform: GradientRotation(-_rotationController.value * 4.28),
-                      ),
-                    ),
-                  );
-                },
-              ),
-
-              // MAIN CONTENT
               SafeArea(
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // PSYCHEDELIC TITLE
                       AnimatedBuilder(
                         animation: _pulsController,
                         builder: (context, child) {
@@ -744,7 +716,7 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                                 transform: GradientRotation(_rotationController.value * 2.0),
                               ).createShader(bounds),
                               child: Text(
-                                'MAZE SURVIVAL',
+                                'MAZE TOURNAMENT',
                                 style: GoogleFonts.creepster(
                                   fontSize: 36,
                                   color: Colors.white,
@@ -776,7 +748,7 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
 
                       const SizedBox(height: 50),
 
-                      // PLAYER COUNTER
+                      // PLAYER COUNTER - Now shows all players as "EXPLORERS"
                       AnimatedBuilder(
                         animation: _pulsController,
                         builder: (context, child) {
@@ -832,7 +804,7 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                                       ],
                                     ).createShader(bounds),
                                     child: Text(
-                                      '$count',
+                                      '$playerCount',
                                       style: GoogleFonts.chicle(
                                         fontSize: 72,
                                         color: Colors.white,
@@ -849,7 +821,7 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                                   ),
                                   const SizedBox(height: 10),
                                   Text(
-                                    '$count/$MAX_PLAYERS EXPLORERS',
+                                    '$playerCount/$MAX_PLAYERS EXPLORERS',
                                     style: GoogleFonts.chicle(
                                       fontSize: 22,
                                       color: Colors.white.withOpacity(0.95),
@@ -859,6 +831,21 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                                           color: Colors.black.withOpacity(0.8),
                                           blurRadius: 6,
                                           offset: const Offset(2, 2),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    _isFilling ? 'Tournament filling up...' : 'Waiting for tournament to fill...',
+                                    style: GoogleFonts.chicle(
+                                      fontSize: 16,
+                                      color: Colors.white.withOpacity(0.8),
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black.withOpacity(0.7),
+                                          blurRadius: 4,
+                                          offset: const Offset(1, 1),
                                         ),
                                       ],
                                     ),
@@ -908,7 +895,8 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                             ),
                             const SizedBox(height: 10),
                             Text(
-                              '🔮 6 rounds of increasingly complex mazes\n'
+                              '🔮 64-player elimination tournament\n'
+                                  '🧠 6 rounds of increasingly complex mazes\n'
                                   '👁️ Brief study phase to memorize the layout\n'
                                   '🌑 Navigate blind through the psychedelic maze\n'
                                   '⚡ Fail a round and you\'re eliminated!\n'
@@ -933,8 +921,6 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                   ),
                 ),
               ),
-
-              // BACK BUTTON
               Positioned(
                 top: 40,
                 left: 20,
@@ -968,6 +954,118 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
     );
   }
 
+  Widget _buildAdCountdownScreen() {
+    return Scaffold(
+      body: AnimatedBuilder(
+        animation: _backgroundController,
+        builder: (context, child) {
+          final t = _backgroundController.value;
+          final interpolatedColors = <Color>[];
+
+          for (int i = 0; i < _currentColors.length; i++) {
+            interpolatedColors.add(
+                Color.lerp(_currentColors[i], _nextColors[i], t) ?? _currentColors[i]
+            );
+          }
+
+          return Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                colors: interpolatedColors,
+                center: Alignment.center,
+                radius: 2.0,
+                stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+              ),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 300,
+                    height: 250,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.purple.withOpacity(0.9),
+                          Colors.pink.withOpacity(0.8),
+                          Colors.cyan.withOpacity(0.7),
+                        ],
+                      ),
+                      border: Border.all(color: Colors.white.withOpacity(0.6), width: 3),
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.play_circle_outline, size: 60, color: Colors.white),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Advertisement',
+                            style: GoogleFonts.chicle(
+                              fontSize: 24,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  AnimatedBuilder(
+                    animation: _pulsController,
+                    builder: (context, child) {
+                      final scale = 1.0 + (_pulsController.value * 0.2);
+                      return Transform.scale(
+                        scale: scale,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.orange.withOpacity(0.9),
+                                Colors.red.withOpacity(0.7),
+                              ],
+                            ),
+                            border: Border.all(color: Colors.white.withOpacity(0.8), width: 2),
+                          ),
+                          child: Text(
+                            'Tournament starts in $_adCountdown seconds...',
+                            style: GoogleFonts.creepster(
+                              fontSize: 20,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  Text(
+                    '64 explorers ready for the maze challenge!',
+                    style: GoogleFonts.chicle(
+                      fontSize: 16,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildStartingScreen() {
     return Scaffold(
       body: AnimatedBuilder(
@@ -991,109 +1089,87 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                 stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
               ),
             ),
-            child: AnimatedBuilder(
-              animation: _pulsController,
-              builder: (context, child) {
-                return Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        interpolatedColors[1].withOpacity(0.4),
-                        Colors.transparent,
-                        interpolatedColors[3].withOpacity(0.3),
-                        Colors.transparent,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      transform: GradientRotation(_pulsController.value * 6.28),
-                    ),
-                  ),
-                  child: child,
-                );
-              },
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    AnimatedBuilder(
-                      animation: _pulsController,
-                      builder: (context, child) {
-                        final scale = 1.0 + (_pulsController.value * 0.4);
-                        return Transform.scale(
-                          scale: scale,
-                          child: Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: RadialGradient(
-                                colors: [
-                                  Colors.purple.withOpacity(0.9),
-                                  Colors.pink.withOpacity(0.8),
-                                  Colors.cyan.withOpacity(0.7),
-                                ],
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.white.withOpacity(0.6),
-                                  blurRadius: 30,
-                                  spreadRadius: 10,
-                                ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AnimatedBuilder(
+                    animation: _pulsController,
+                    builder: (context, child) {
+                      final scale = 1.0 + (_pulsController.value * 0.4);
+                      return Transform.scale(
+                        scale: scale,
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: [
+                                Colors.purple.withOpacity(0.9),
+                                Colors.pink.withOpacity(0.8),
+                                Colors.cyan.withOpacity(0.7),
                               ],
                             ),
-                            child: const Icon(
-                              Icons.explore,
-                              size: 100,
-                              color: Colors.white,
-                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.white.withOpacity(0.6),
+                                blurRadius: 30,
+                                spreadRadius: 10,
+                              ),
+                            ],
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 30),
-                    ShaderMask(
-                      shaderCallback: (bounds) => LinearGradient(
-                        colors: [
-                          Colors.purple,
-                          Colors.pink,
-                          Colors.cyan,
-                          Colors.blue,
-                        ],
-                      ).createShader(bounds),
-                      child: Text(
-                        'ENTERING THE MAZE!',
-                        style: GoogleFonts.creepster(
-                          fontSize: 40,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 3.0,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black.withOpacity(0.9),
-                              blurRadius: 15,
-                              offset: const Offset(4, 4),
-                            ),
-                          ],
+                          child: const Icon(
+                            Icons.explore,
+                            size: 100,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'The maze survival begins...',
-                      style: GoogleFonts.chicle(
-                        fontSize: 20,
-                        color: Colors.white.withOpacity(0.9),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 30),
+                  ShaderMask(
+                    shaderCallback: (bounds) => LinearGradient(
+                      colors: [
+                        Colors.purple,
+                        Colors.pink,
+                        Colors.cyan,
+                        Colors.blue,
+                      ],
+                    ).createShader(bounds),
+                    child: Text(
+                      'ENTERING THE TOURNAMENT!',
+                      style: GoogleFonts.creepster(
+                        fontSize: 40,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 3.0,
                         shadows: [
                           Shadow(
-                            color: Colors.black.withOpacity(0.7),
-                            blurRadius: 6,
-                            offset: const Offset(2, 2),
+                            color: Colors.black.withOpacity(0.9),
+                            blurRadius: 15,
+                            offset: const Offset(4, 4),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'The 64-player maze tournament begins...',
+                    style: GoogleFonts.chicle(
+                      fontSize: 20,
+                      color: Colors.white.withOpacity(0.9),
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withOpacity(0.7),
+                          blurRadius: 6,
+                          offset: const Offset(2, 2),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -1116,7 +1192,7 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'Maze portal malfunction...',
+                'Tournament connection failed...',
                 style: GoogleFonts.chicle(
                   fontSize: 24,
                   color: Colors.white,
@@ -1135,7 +1211,7 @@ class _MazeLobbyScreenState extends State<MazeLobbyScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.withOpacity(0.8),
                 ),
-                child: const Text('Return to Reality'),
+                child: const Text('Return to Menu'),
               ),
             ],
           ),

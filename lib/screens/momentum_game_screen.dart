@@ -1,4 +1,4 @@
-// lib/screens/momentum_game_screen.dart - SINGLE ROUND 10-SPIN VERSION
+// lib/screens/momentum_game_screen.dart - FIXED 10-SPIN SINGLE TOURNAMENT
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -26,7 +26,7 @@ class MomentumGameScreen extends StatefulWidget {
 class _MomentumGameScreenState extends State<MomentumGameScreen>
     with TickerProviderStateMixin {
 
-  // Game state - CHANGED: Single round with 10 spins
+  // Game state - FIXED: 10 spins total for single tournament
   int _currentSpin = 1;
   static const int TOTAL_SPINS = 10; // 10 spins total
   bool _hasSubmitted = false;
@@ -34,7 +34,7 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
   // Wheel state - OPTIMIZED: Instant stop, progressive speed
   bool _isSpinning = false;
   double _wheelPosition = 0.0; // 0.0 to 1.0 representing full rotation
-  double _currentSpinSpeed = 1.0; // FIXED: Speed for current spin only
+  double _currentSpinSpeed = 1.0; // Speed for current spin only
   Timer? _wheelTimer;
 
   // PROGRESSIVE SPEED SYSTEM
@@ -152,7 +152,7 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
   void _startSpinning() {
     if (_isSpinning || _currentSpin > TOTAL_SPINS) return;
 
-    // FIXED: Calculate speed ONCE at start of spin and keep it consistent
+    // Calculate speed ONCE at start of spin and keep it consistent
     final speedMultiplier = _getCurrentSpeedMultiplier();
     _currentSpinSpeed = 2.0 * speedMultiplier; // Lock in speed for this entire spin
 
@@ -176,7 +176,7 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
       }
 
       setState(() {
-        // FIXED: Use locked-in speed for entire spin duration
+        // Use locked-in speed for entire spin duration
         _wheelPosition += (_currentSpinSpeed * frameTime);
         if (_wheelPosition >= 1.0) {
           _wheelPosition -= 1.0;
@@ -224,11 +224,11 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
 
     // Prepare for next spin or finish
     if (_currentSpin < TOTAL_SPINS) {
-      Timer(const Duration(milliseconds: 1200), () { // Reduced delay
+      Timer(const Duration(milliseconds: 1200), () {
         if (mounted) {
           setState(() {
             _currentSpin++;
-            // FIXED: Show NEXT spin's speed, not current
+            // Show NEXT spin's speed, not current
             final nextSpeed = _getCurrentSpeedMultiplier();
             _statusMessage = 'Spin $_currentSpin/$TOTAL_SPINS - Next Speed: ${nextSpeed.toStringAsFixed(1)}x - Tap to spin!';
             _showResult = false;
@@ -246,7 +246,7 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
   }
 
   void _updateAccuracyMultiplier(int score) {
-    // FIXED: Only update for NEXT spin, not current spin
+    // Only update for NEXT spin, not current spin
     // Exponential speed increase based on accuracy
     double accuracyPercent = score / 1000.0;
 
@@ -290,7 +290,7 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
       final accuracy = 1.0 - (distanceFromPerfect / (TARGET_SIZE / 2));
       final baseScore = (accuracy * 1000).round();
 
-      // FIXED: Use speed from when spin started, not current multiplier
+      // Use speed from when spin started, not current multiplier
       final speedBonus = (_currentSpinSpeed > 10.0 ?
       (_currentSpinSpeed - 2.0) * 10 : 0).round();
 
@@ -382,7 +382,7 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
               playerScore: totalScore,
               spinScores: _spinScores,
               isPractice: widget.isPractice,
-              achievements: [], // Single round, no complex achievements
+              achievements: [], // Single tournament, no complex achievements
               momentumMultiplier: _getCurrentSpeedMultiplier(),
               comebackBonuses: 0,
             ),
@@ -406,7 +406,7 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
         'uid': _uid,
         'totalScore': totalScore,
         'spinScores': _spinScores,
-        'maxSpeed': _getCurrentSpeedMultiplier(),
+        'maxSpeed': _getCurrentSpeedMultiplier(), // FIXED: Store as maxSpeed
         'submittedAt': FieldValue.serverTimestamp(),
         'isBot': false,
       });
@@ -842,7 +842,7 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
     return AnimatedBuilder(
       animation: _pulsController,
       builder: (context, child) {
-        // FIXED: Remove pulsing scale during spinning to maintain consistent visual speed
+        // Remove pulsing scale during spinning to maintain consistent visual speed
         final pulseScale = _isSpinning ? 1.0 : 1.0 + (_pulsController.value * 0.03);
         final glowIntensity = 0.6 + (_pulsController.value * 0.4) + (_getCurrentSpeedMultiplier() * 0.05);
 

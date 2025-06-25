@@ -1,4 +1,4 @@
-// lib/screens/match_lobby_screen.dart - MATCH MADNESS LOBBY
+// lib/screens/match_lobby_screen.dart - MATCH MADNESS LOBBY + RANDOM START
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -106,21 +106,26 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
       DocumentReference doc;
       if (snap.docs.isEmpty) {
         print('Match Creating new match tournament (max $TOURNAMENT_SIZE players)');
+
+        // RANDOM STARTING PLAYER COUNT (1-64)
+        final random = math.Random();
+        final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1; // 1 to 64
+
         doc = await _db.collection('match_tournaments').add({
           'status': 'waiting',
           'players': [_uid],
-          'playerCount': 1,
+          'playerCount': randomStartCount, // CHANGED: Random instead of 1
           'maxPlayers': TOURNAMENT_SIZE,
           'createdAt': FieldValue.serverTimestamp(),
           'bots': <String, dynamic>{},
         });
         _tournamentCreatedTime = DateTime.now();
-        print('Match Created tournament with ID: ${doc.id}');
+        print('Match Created tournament with ID: ${doc.id}, starting with $randomStartCount players');
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = 1;
-            _displayedPlayerCount = 1;
+            _actualPlayerCount = randomStartCount; // CHANGED: Use random count
+            _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
           });
         }
         _startAutoFillTimer();
@@ -133,10 +138,15 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
 
         if (currentCount >= TOURNAMENT_SIZE) {
           print('Match Tournament is full, creating new one instead');
+
+          // RANDOM STARTING PLAYER COUNT for full tournament case
+          final random = math.Random();
+          final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1;
+
           doc = await _db.collection('match_tournaments').add({
             'status': 'waiting',
             'players': [_uid],
-            'playerCount': 1,
+            'playerCount': randomStartCount, // CHANGED: Random instead of 1
             'maxPlayers': TOURNAMENT_SIZE,
             'createdAt': FieldValue.serverTimestamp(),
             'bots': <String, dynamic>{},
@@ -145,8 +155,8 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
           if (mounted) {
             setState(() {
               _tourneyId = doc.id;
-              _actualPlayerCount = 1;
-              _displayedPlayerCount = 1;
+              _actualPlayerCount = randomStartCount; // CHANGED: Use random count
+              _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
             });
           }
           _startAutoFillTimer();
@@ -180,21 +190,25 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
     } catch (e) {
       print('Match Error joining/creating match tournament: $e');
       try {
+        // RANDOM STARTING PLAYER COUNT for fallback case
+        final random = math.Random();
+        final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1;
+
         final doc = await _db.collection('match_tournaments').add({
           'status': 'waiting',
           'players': [_uid],
-          'playerCount': 1,
+          'playerCount': randomStartCount, // CHANGED: Random instead of 1
           'maxPlayers': TOURNAMENT_SIZE,
           'createdAt': FieldValue.serverTimestamp(),
           'bots': <String, dynamic>{},
         });
         _tournamentCreatedTime = DateTime.now();
-        print('Match Created fallback tournament: ${doc.id}');
+        print('Match Created fallback tournament: ${doc.id} with $randomStartCount players');
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = 1;
-            _displayedPlayerCount = 1;
+            _actualPlayerCount = randomStartCount; // CHANGED: Use random count
+            _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
           });
         }
         _startAutoFillTimer();
@@ -267,10 +281,11 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
       final progressRatio = secondsElapsed / 10.0;
       targetCount = math.max(currentCount, (TOURNAMENT_SIZE * progressRatio).round());
 
-      if (secondsElapsed >= 2 && targetCount < 16) targetCount = 16;
-      if (secondsElapsed >= 4 && targetCount < 32) targetCount = 32;
-      if (secondsElapsed >= 6 && targetCount < 48) targetCount = 48;
-      if (secondsElapsed >= 8 && targetCount < 56) targetCount = 56;
+      // UPDATED: Ensure we hit key milestones but never go below current count
+      if (secondsElapsed >= 2 && targetCount < 16) targetCount = math.max(currentCount, 16);
+      if (secondsElapsed >= 4 && targetCount < 32) targetCount = math.max(currentCount, 32);
+      if (secondsElapsed >= 6 && targetCount < 48) targetCount = math.max(currentCount, 48);
+      if (secondsElapsed >= 8 && targetCount < 56) targetCount = math.max(currentCount, 56);
       if (secondsElapsed >= 10) targetCount = TOURNAMENT_SIZE;
 
       print('Match ${secondsElapsed}s: Target $targetCount players (progress: ${(progressRatio * 100).toInt()}%)');

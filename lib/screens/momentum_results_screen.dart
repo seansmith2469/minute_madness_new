@@ -1,4 +1,4 @@
-// lib/screens/momentum_results_screen.dart - OPTIMIZED VERSION (7 ROUNDS)
+// lib/screens/momentum_results_screen.dart - FIXED SINGLE TOURNAMENT VERSION
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -39,19 +39,9 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
   final _db = FirebaseFirestore.instance;
   final _uid = FirebaseAuth.instance.currentUser!.uid;
 
-  // UPDATED: 7-round tournament structure (128 players total)
-  static const int TOURNAMENT_SIZE = 128; // INCREASED from 64 to 128
-
-  // UPDATED: 7-round tournament progression
-  late final Map<int, int> _playersPerRound = {
-    1: 128, // Round 1: 128 players
-    2: 64,  // Round 2: 64 players
-    3: 32,  // Round 3: 32 players
-    4: 16,  // Round 4: 16 players
-    5: 8,   // Round 5: 8 players
-    6: 4,   // Round 6: 4 players
-    7: 2,   // Round 7: 2 players (FINAL)
-  };
+  // FIXED: Single tournament with 64 players total
+  static const int TOURNAMENT_SIZE = 64; // FIXED: Match lobby screen
+  static const bool IS_SINGLE_TOURNAMENT = true; // Single tournament, no rounds
 
   // ENHANCED ANIMATION CONTROLLERS
   late AnimationController _primaryController;
@@ -67,8 +57,6 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
   bool _isLoading = true;
   int _playerRank = 0;
   int _totalPlayers = TOURNAMENT_SIZE;
-  int _currentRound = 1;
-  bool _playerAdvanced = false;
   bool _isChampion = false;
   List<Map<String, dynamic>> _allResults = [];
 
@@ -134,9 +122,9 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
     final random = math.Random();
 
     // Enhanced colors based on performance
-    List<Color> baseColors = widget.playerScore > 3500 // UPDATED threshold for 7 spins
+    List<Color> baseColors = widget.playerScore > 7000 // UPDATED threshold for 10 spins
         ? [Colors.amber.shade700, Colors.yellow.shade600, Colors.orange.shade700, Colors.red.shade700]
-        : widget.playerScore > 2800 // UPDATED threshold for 7 spins
+        : widget.playerScore > 5500 // UPDATED threshold for 10 spins
         ? [Colors.green.shade700, Colors.lime.shade600, Colors.cyan.shade600, Colors.blue.shade700]
         : [Colors.purple.shade700, Colors.pink.shade600, Colors.indigo.shade700, Colors.blue.shade800];
 
@@ -160,10 +148,10 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
       });
     }
 
-    // Haptic feedback for good performance - UPDATED thresholds for 7 spins
-    if (widget.playerScore >= 3500) {
+    // Haptic feedback for good performance - UPDATED thresholds for 10 spins
+    if (widget.playerScore >= 7000) {
       HapticFeedback.heavyImpact();
-    } else if (widget.playerScore >= 2800) {
+    } else if (widget.playerScore >= 5500) {
       HapticFeedback.mediumImpact();
     }
 
@@ -225,9 +213,10 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
     }
   }
 
+  // FIXED: Single tournament results calculation
   Future<void> _calculateTournamentResults() async {
     try {
-      print('Enhanced Momentum: Calculating tournament results for ${widget.tourneyId}');
+      print('Enhanced Momentum: Calculating single tournament results for ${widget.tourneyId}');
 
       final tourneyDoc = await _db.collection('momentum_tournaments').doc(widget.tourneyId).get();
 
@@ -244,15 +233,13 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
         return;
       }
 
-      final currentPlayerCount = tourneyData['playerCount'] as int? ?? 128;
-      _currentRound = _getRoundFromPlayerCount(currentPlayerCount);
-
-      print('Enhanced Momentum: Current round: $_currentRound with $currentPlayerCount players');
+      final currentPlayerCount = tourneyData['playerCount'] as int? ?? 64;
+      print('Enhanced Momentum: Tournament has $currentPlayerCount players');
 
       // Wait for results with enhanced loading
       int attempts = 0;
       int resultCount = 0;
-      final expectedResults = math.min(currentPlayerCount, _playersPerRound[_currentRound] ?? 128);
+      final expectedResults = math.min(currentPlayerCount, TOURNAMENT_SIZE);
 
       while (attempts < 15 && resultCount < (expectedResults * 0.8)) {
         await Future.delayed(const Duration(seconds: 1));
@@ -282,9 +269,8 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
           final data = doc.data();
           final totalScore = data['totalScore'] as int? ?? 0;
           final spinScores = List<int>.from(data['spinScores'] as List? ?? []);
-          final momentum = data['momentum'] as double? ?? 1.0;
+          final momentum = data['maxSpeed'] as double? ?? 1.0; // FIXED: Use maxSpeed
           final isBot = data['isBot'] as bool? ?? false;
-          final achievements = List<String>.from(data['achievements'] as List? ?? []);
 
           return {
             'uid': data['uid'] as String? ?? doc.id,
@@ -292,7 +278,6 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
             'spinScores': spinScores,
             'momentum': momentum,
             'isBot': isBot,
-            'achievements': achievements,
           };
         } catch (e) {
           return null;
@@ -321,13 +306,9 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
       _playerRank = playerRankAmongSubmissions;
       _totalPlayers = _allResults.length;
+      _isChampion = (_playerRank == 1); // Winner is #1
 
-      // Determine advancement
-      final playersAdvancing = _getAdvancingPlayers(_currentRound, _totalPlayers);
-      _playerAdvanced = _playerRank <= playersAdvancing;
-      _isChampion = (_currentRound == 7 && _playerRank == 1); // UPDATED: Round 7 is final
-
-      print('Enhanced Momentum: Player rank: $_playerRank/$_totalPlayers, Round: $_currentRound, Advanced: $_playerAdvanced, Champion: $_isChampion');
+      print('Enhanced Momentum: Player rank: $_playerRank/$_totalPlayers, Champion: $_isChampion');
 
       setState(() {
         _isLoading = false;
@@ -341,7 +322,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
         HapticFeedback.heavyImpact();
         _createConfetti();
         _confettiController.forward();
-      } else if (_playerAdvanced) {
+      } else if (_playerRank <= 5) {
         HapticFeedback.mediumImpact();
       }
 
@@ -355,10 +336,8 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
       if (mounted) {
         if (_isChampion) {
           _showChampionDialog();
-        } else if (_playerAdvanced) {
-          _processAdvancement();
         } else {
-          _showEliminationDialog();
+          _showCompletionDialog();
         }
       }
 
@@ -367,90 +346,6 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
       setState(() {
         _isLoading = false;
       });
-    }
-  }
-
-  int _getRoundFromPlayerCount(int playerCount) {
-    if (playerCount > 64) return 1;
-    if (playerCount > 32) return 2;
-    if (playerCount > 16) return 3;
-    if (playerCount > 8) return 4;
-    if (playerCount > 4) return 5;
-    if (playerCount > 2) return 6;
-    return 7;
-  }
-
-  int _getAdvancingPlayers(int round, int totalPlayers) {
-    if (round >= 7) return 1;
-    final nextRoundTarget = _playersPerRound[round + 1] ?? 1;
-    return math.min(nextRoundTarget, totalPlayers ~/ 2);
-  }
-
-  Future<void> _processAdvancement() async {
-    try {
-      print('Enhanced Momentum: Processing advancement for round $_currentRound');
-
-      final playersAdvancing = _getAdvancingPlayers(_currentRound, _totalPlayers);
-      final advancingPlayerIds = _allResults
-          .take(playersAdvancing)
-          .map((result) => result['uid'] as String)
-          .toList();
-
-      print('Enhanced Momentum: $playersAdvancing players advancing to round ${_currentRound + 1}');
-
-      final batch = _db.batch();
-      final resultsCollection = _db
-          .collection('momentum_tournaments')
-          .doc(widget.tourneyId)
-          .collection('results');
-
-      final allResultDocs = await resultsCollection.get();
-      for (final doc in allResultDocs.docs) {
-        batch.delete(doc.reference);
-      }
-
-      // Get current tournament data to preserve bot info
-      final tourneyDoc = await _db.collection('momentum_tournaments').doc(widget.tourneyId).get();
-      final tourneyData = tourneyDoc.data() as Map<String, dynamic>;
-      final currentBots = tourneyData['bots'] as Map<String, dynamic>? ?? {};
-
-      // Filter bots to only include advancing ones
-      final advancingBots = <String, dynamic>{};
-      for (String playerId in advancingPlayerIds) {
-        if (currentBots.containsKey(playerId)) {
-          advancingBots[playerId] = currentBots[playerId];
-        }
-      }
-
-      // Update tournament for next round
-      batch.update(_db.collection('momentum_tournaments').doc(widget.tourneyId), {
-        'players': advancingPlayerIds,
-        'playerCount': advancingPlayerIds.length,
-        'round': _currentRound + 1,
-        'status': 'waiting',
-        'bots': advancingBots,
-      });
-
-      await batch.commit();
-
-      print('Enhanced Momentum: Tournament updated for round ${_currentRound + 1}');
-
-      Timer(const Duration(seconds: 2), () {
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => MomentumGameScreen(
-                isPractice: false,
-                tourneyId: widget.tourneyId,
-              ),
-            ),
-          );
-        }
-      });
-
-    } catch (e) {
-      print('Error processing enhanced momentum advancement: $e');
     }
   }
 
@@ -569,7 +464,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
             colors: [Colors.yellow, Colors.orange, Colors.red],
           ).createShader(bounds),
           child: Text(
-            'ULTIMATE MOMENTUM CHAMPION!',
+            'MOMENTUM CHAMPION!',
             style: GoogleFonts.creepster(
               fontSize: 22,
               color: Colors.white,
@@ -582,7 +477,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'You are the ultimate Momentum Master!\n\nDefeated ${TOURNAMENT_SIZE - 1} other players across 7 intense rounds!\n\nTotal Score: ${widget.playerScore}\nMax Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x\nSpin Scores: ${widget.spinScores.join(", ")}',
+              'You are the ultimate Momentum Master!\n\nDefeated ${TOURNAMENT_SIZE - 1} other players!\n\nTotal Score: ${widget.playerScore}\nMax Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x\nSpin Scores: ${widget.spinScores.join(", ")}',
               style: GoogleFonts.chicle(
                 fontSize: 16,
                 color: Colors.white,
@@ -653,8 +548,13 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
     );
   }
 
-  void _showEliminationDialog() {
-    final roundName = _getRoundName(_currentRound);
+  // FIXED: Single tournament completion dialog
+  void _showCompletionDialog() {
+    final positionText = _playerRank == 1 ? 'CHAMPION!' :
+    _playerRank <= 3 ? 'PODIUM FINISH!' :
+    _playerRank <= 10 ? 'TOP 10 FINISH!' :
+    _playerRank <= 20 ? 'TOP 20 FINISH!' :
+    'TOURNAMENT COMPLETE!';
 
     showDialog(
       context: context,
@@ -664,12 +564,14 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
         title: ShaderMask(
           shaderCallback: (bounds) => LinearGradient(
-            colors: [Colors.orange, Colors.red, Colors.purple],
+            colors: _playerRank == 1 ? [Colors.yellow, Colors.orange, Colors.red] :
+            _playerRank <= 3 ? [Colors.grey.shade300, Colors.amber, Colors.orange] :
+            [Colors.cyan, Colors.blue, Colors.purple],
           ).createShader(bounds),
           child: Text(
-            'Momentum Challenge Complete',
+            positionText,
             style: GoogleFonts.creepster(
-              fontSize: 18,
+              fontSize: 22,
               color: Colors.white,
               fontWeight: FontWeight.bold,
             ),
@@ -680,7 +582,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Eliminated in $roundName\n\nFinal Position: $_playerRank out of $TOURNAMENT_SIZE players\n\nTotal Score: ${widget.playerScore}\nMax Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x\nSpin Scores: ${widget.spinScores.join(", ")}\n\n${_getEncouragementMessage()}',
+              'Final Position: $_playerRank out of $TOURNAMENT_SIZE players\n\nTotal Score: ${widget.playerScore}\nMax Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x\nSpin Scores: ${widget.spinScores.join(", ")}',
               style: GoogleFonts.chicle(
                 fontSize: 16,
                 color: Colors.white,
@@ -762,22 +664,9 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
     );
   }
 
-  String _getRoundName(int round) {
-    switch (round) {
-      case 1: return 'Round of 128';
-      case 2: return 'Round of 64';
-      case 3: return 'Round of 32';
-      case 4: return 'Round of 16';
-      case 5: return 'Quarterfinals';
-      case 6: return 'Semifinals';
-      case 7: return 'Finals';
-      default: return 'Round $round';
-    }
-  }
-
   String _getEncouragementMessage() {
-    if (widget.playerScore >= 3500) return 'Legendary momentum control!'; // Updated for 7 spins
-    if (widget.playerScore >= 2800) return 'Masterful spinning technique!'; // Updated for 7 spins
+    if (widget.playerScore >= 7000) return 'Legendary momentum control!'; // Updated for 10 spins
+    if (widget.playerScore >= 5500) return 'Masterful spinning technique!'; // Updated for 10 spins
     if (_playerRank <= 8) return 'Outstanding spinning skills!';
     if (_playerRank <= 16) return 'Great momentum control!';
     if (_playerRank <= 32) return 'Solid wheel mastery!';
@@ -1013,9 +902,9 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(
-                          colors: widget.playerScore >= 3500 // Updated threshold for 7 spins
+                          colors: widget.playerScore >= 7000 // Updated threshold for 10 spins
                               ? [Colors.yellow.withOpacity(0.9), Colors.orange.withOpacity(0.8), Colors.red.withOpacity(0.7)]
-                              : widget.playerScore >= 2800 // Updated threshold for 7 spins
+                              : widget.playerScore >= 5500 // Updated threshold for 10 spins
                               ? [Colors.green.withOpacity(0.9), Colors.lime.withOpacity(0.8), Colors.cyan.withOpacity(0.7)]
                               : [Colors.blue.withOpacity(0.9), Colors.purple.withOpacity(0.8), Colors.indigo.withOpacity(0.7)],
                         ),
@@ -1028,8 +917,8 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                         ],
                       ),
                       child: Icon(
-                        widget.playerScore >= 3500 ? Icons.emoji_events :
-                        widget.playerScore >= 2800 ? Icons.star : Icons.check_circle,
+                        widget.playerScore >= 7000 ? Icons.emoji_events :
+                        widget.playerScore >= 5500 ? Icons.star : Icons.check_circle,
                         size: 80,
                         color: Colors.white,
                       ),
@@ -1043,15 +932,15 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
               // Enhanced title with momentum indicators
               ShaderMask(
                 shaderCallback: (bounds) => LinearGradient(
-                  colors: widget.playerScore >= 3500 // Updated threshold for 7 spins
+                  colors: widget.playerScore >= 7000 // Updated threshold for 10 spins
                       ? [Colors.yellow, Colors.orange, Colors.red]
-                      : widget.playerScore >= 2800 // Updated threshold for 7 spins
+                      : widget.playerScore >= 5500 // Updated threshold for 10 spins
                       ? [Colors.green, Colors.lime, Colors.cyan]
                       : [Colors.blue, Colors.purple, Colors.indigo],
                 ).createShader(bounds),
                 child: Text(
-                  widget.playerScore >= 3500 ? 'MOMENTUM LEGEND!' :
-                  widget.playerScore >= 2800 ? 'MOMENTUM MASTER!' : 'PRACTICE COMPLETE!',
+                  widget.playerScore >= 7000 ? 'MOMENTUM LEGEND!' :
+                  widget.playerScore >= 5500 ? 'MOMENTUM MASTER!' : 'PRACTICE COMPLETE!',
                   style: GoogleFonts.creepster(
                     fontSize: 32,
                     color: Colors.white,
@@ -1150,11 +1039,11 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
                     const SizedBox(height: 12),
 
-                    // Spin breakdown - OPTIMIZED for 7 spins
+                    // Spin breakdown - OPTIMIZED for 10 spins
                     Text(
                       'Spins: ${widget.spinScores.join(" • ")}',
                       style: GoogleFonts.chicle(
-                        fontSize: 14, // Reduced font size for 7 spins
+                        fontSize: 12, // Reduced font size for 10 spins
                         color: Colors.white.withOpacity(0.9),
                         shadows: [
                           Shadow(
@@ -1191,13 +1080,13 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
                     const SizedBox(height: 15),
 
-                    // Performance message - UPDATED for 7 spins
+                    // Performance message - UPDATED for 10 spins
                     Text(
-                      widget.playerScore >= 3500
+                      widget.playerScore >= 7000
                           ? 'Perfect momentum mastery!\nReady to dominate tournaments!'
-                          : widget.playerScore >= 2800
+                          : widget.playerScore >= 5500
                           ? 'Excellent control!\nTournament ready!'
-                          : widget.playerScore >= 2100
+                          : widget.playerScore >= 4000
                           ? 'Great improvement!\nKeep building momentum!'
                           : 'Good foundation!\nPractice makes perfect!',
                       style: GoogleFonts.chicle(
@@ -1295,10 +1184,8 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
   Widget _buildEnhancedTournamentResult() {
     final isWinner = _isChampion;
-    final isAdvancing = _playerAdvanced && !_isChampion;
     final isTopTen = _playerRank <= 10;
     final isTopHalf = _playerRank <= (TOURNAMENT_SIZE ~/ 2);
-    final roundName = _getRoundName(_currentRound);
 
     return AnimatedBuilder(
       animation: _scaleController,
@@ -1326,7 +1213,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                         gradient: RadialGradient(
                           colors: isWinner
                               ? [Colors.yellow.withOpacity(0.9), Colors.orange.withOpacity(0.8), Colors.red.withOpacity(0.7)]
-                              : isAdvancing
+                              : isTopTen
                               ? [Colors.green.withOpacity(0.9), Colors.lime.withOpacity(0.8), Colors.cyan.withOpacity(0.7)]
                               : isTopHalf
                               ? [Colors.blue.withOpacity(0.9), Colors.cyan.withOpacity(0.8), Colors.purple.withOpacity(0.7)]
@@ -1340,7 +1227,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                           ),
                           BoxShadow(
                             color: isWinner ? Colors.yellow.withOpacity(0.6) :
-                            isAdvancing ? Colors.green.withOpacity(0.6) : Colors.purple.withOpacity(0.6),
+                            isTopTen ? Colors.green.withOpacity(0.6) : Colors.purple.withOpacity(0.6),
                             blurRadius: 35 + (widget.momentumMultiplier * 20),
                             spreadRadius: 5 + (widget.momentumMultiplier * 2),
                           ),
@@ -1348,7 +1235,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                       ),
                       child: Icon(
                         isWinner ? Icons.emoji_events :
-                        isAdvancing ? Icons.arrow_upward :
+                        isTopTen ? Icons.star :
                         isTopHalf ? Icons.star_half : Icons.rotate_right,
                         size: 80,
                         color: Colors.white,
@@ -1365,13 +1252,13 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                 shaderCallback: (bounds) => LinearGradient(
                   colors: isWinner
                       ? [Colors.yellow, Colors.orange, Colors.red, Colors.pink]
-                      : isAdvancing
+                      : isTopTen
                       ? [Colors.green, Colors.lime, Colors.cyan, Colors.blue]
                       : [Colors.purple, Colors.pink, Colors.cyan, Colors.blue],
                 ).createShader(bounds),
                 child: Text(
-                  isWinner ? 'ULTIMATE MOMENTUM CHAMPION!' :
-                  isAdvancing ? 'ADVANCED WITH MOMENTUM!' : 'MOMENTUM CHALLENGE COMPLETE',
+                  isWinner ? 'MOMENTUM CHAMPION!' :
+                  isTopTen ? 'TOP 10 FINISH!' : 'TOURNAMENT COMPLETE',
                   style: GoogleFonts.creepster(
                     fontSize: 28,
                     color: Colors.white,
@@ -1396,11 +1283,10 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
               const SizedBox(height: 20),
 
-              // Round and placement text
+              // Tournament position text
               Text(
                 isWinner ? 'Perfect Momentum Mastery!' :
-                isAdvancing ? 'Advancing to ${_getRoundName(_currentRound + 1)}' :
-                'Eliminated in $roundName',
+                'Single Tournament Challenge Complete',
                 style: GoogleFonts.chicle(
                   fontSize: 20,
                   color: Colors.white.withOpacity(0.9),
@@ -1418,7 +1304,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
               const SizedBox(height: 10),
 
               Text(
-                '$_playerRank / $TOURNAMENT_SIZE', // Shows rank out of 128 players
+                '$_playerRank / $TOURNAMENT_SIZE', // Shows rank out of 64 players
                 style: GoogleFonts.chicle(
                   fontSize: 28,
                   color: Colors.white.withOpacity(0.9),
@@ -1514,7 +1400,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                     Text(
                       'Spins: ${widget.spinScores.join(" • ")}',
                       style: GoogleFonts.chicle(
-                        fontSize: 14, // Reduced for 7 spins
+                        fontSize: 12, // Reduced for 10 spins
                         color: Colors.white.withOpacity(0.9),
                         shadows: [
                           Shadow(
@@ -1553,11 +1439,9 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
                     Text(
                       isWinner
-                          ? 'Perfect momentum mastery!\nDefeated ${TOURNAMENT_SIZE - 1} opponents across 7 rounds!\nMax Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x achieved!'
-                          : isAdvancing
-                          ? 'Excellent momentum control!\nAdvancing with ${widget.momentumMultiplier.toStringAsFixed(1)}x peak momentum!'
+                          ? 'Perfect momentum mastery!\nDefeated ${TOURNAMENT_SIZE - 1} opponents in single tournament!\nMax Momentum: ${widget.momentumMultiplier.toStringAsFixed(1)}x achieved!'
                           : isTopTen
-                          ? 'Outstanding performance!\nTop ${(_playerRank / TOURNAMENT_SIZE * 100).round()}% finish with ${widget.momentumMultiplier.toStringAsFixed(1)}x momentum!'
+                          ? 'Excellent momentum control!\nTop ${(_playerRank / TOURNAMENT_SIZE * 100).round()}% finish with ${widget.momentumMultiplier.toStringAsFixed(1)}x peak momentum!'
                           : isTopHalf
                           ? 'Solid momentum effort!\nAbove average finish!'
                           : 'Good momentum foundation!\nKeep building your skills!',
@@ -1650,7 +1534,7 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
 
               const SizedBox(height: 30),
 
-              // Next round or encouragement text
+              // Final encouragement text
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
                 margin: const EdgeInsets.symmetric(horizontal: 40),
@@ -1671,8 +1555,6 @@ class _MomentumResultsScreenState extends State<MomentumResultsScreen>
                 child: Text(
                   isWinner
                       ? 'Legendary Momentum Master!'
-                      : isAdvancing
-                      ? 'Momentum building... Next round incoming!'
                       : _getEncouragementMessage(),
                   style: GoogleFonts.chicle(
                     fontSize: 18,

@@ -1,14 +1,15 @@
-// lib/services/momentum_bot_service.dart - MOMENTUM WHEEL BOT SERVICE
+// lib/services/momentum_bot_service.dart - SUPER COMPETITIVE BOTS
 import 'dart:math' as math;
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// Bot difficulty levels for momentum wheel challenge
+// Bot difficulty levels for 10-spin momentum wheel challenge
 enum MomentumBotDifficulty {
-  wobbler,    // Poor wheel timing - 200-800 points per spin (40% of bots)
-  steady,     // Average timing - 400-700 points per spin (35% of bots)
-  precise,    // Good timing - 600-900 points per spin (20% of bots)
-  master,     // Excellent timing - 800-1000 points per spin (5% of bots)
+  rookie,     // Poor performance - 2000-4000 total (25% of bots)
+  amateur,    // Below average - 3500-5500 total (30% of bots)
+  skilled,    // Average-good - 5000-7000 total (25% of bots)
+  expert,     // Good-excellent - 6500-8500 total (15% of bots)
+  master,     // Elite level - 8000-9500+ total (5% of bots)
 }
 
 class MomentumBotPlayer {
@@ -22,75 +23,104 @@ class MomentumBotPlayer {
     required this.difficulty,
   });
 
-  // Generate realistic momentum wheel performance with 3 spins
+  // Generate realistic momentum wheel performance with 10 spins
   List<int> generateSpinScores() {
     final random = math.Random();
     final spinScores = <int>[];
     double momentum = 1.0; // Start with base momentum
 
-    for (int spin = 0; spin < 3; spin++) {
+    // Progressive speed increase simulation (like player experience)
+    double progressiveMultiplier = 1.0;
+
+    for (int spin = 0; spin < 10; spin++) {
+      // Progressive speed increase (spins get faster)
+      progressiveMultiplier = 1.0 + (spin / 9.0) * 3.0; // 1x to 4x speed progression
+
       final baseScore = _generateBaseSpin();
 
       // Apply momentum effect - better scores increase momentum
       final momentumAdjustedScore = (baseScore * momentum).round();
-      final finalScore = math.min(momentumAdjustedScore, 1000); // Cap at 1000
+
+      // Apply progressive speed bonus for later spins (more aggressive)
+      final speedBonus = progressiveMultiplier > 2.0 ?
+      ((progressiveMultiplier - 2.0) * 50).round() : 0; // Increased from 20 to 50
+
+      final finalScore = math.min(momentumAdjustedScore + speedBonus, 1000); // Cap at 1000
 
       spinScores.add(finalScore);
 
-      // Update momentum based on performance
-      if (finalScore >= 800) {
-        momentum += 0.3; // Excellent spin boosts momentum
-      } else if (finalScore >= 600) {
-        momentum += 0.1; // Good spin slightly boosts momentum
-      } else if (finalScore < 400) {
-        momentum = math.max(1.0, momentum - 0.2); // Poor spin reduces momentum
+      // Update momentum based on performance (same as players but more aggressive)
+      if (finalScore >= 950) {
+        momentum *= 2.0; // Increased from 1.8
+      } else if (finalScore >= 900) {
+        momentum *= 1.7; // Increased from 1.5
+      } else if (finalScore >= 800) {
+        momentum *= 1.4; // Increased from 1.3
+      } else if (finalScore >= 700) {
+        momentum *= 1.2; // Increased from 1.1
+      } else if (finalScore >= 500) {
+        momentum *= 0.95; // Same
+      } else {
+        momentum *= 0.8; // Same
       }
 
-      // Cap momentum at realistic levels
-      momentum = math.min(momentum, 4.0);
+      // Cap the multiplier (same as players)
+      momentum = math.min(momentum, 20.0);
+      momentum = math.max(momentum, 0.5);
     }
 
     return spinScores;
   }
 
-  // Generate base spin score based on difficulty
+  // Generate base spin score based on difficulty - MUCH MORE AGGRESSIVE
   int _generateBaseSpin() {
     final random = math.Random();
 
     switch (difficulty) {
-      case MomentumBotDifficulty.wobbler:
-      // Poor timing - mostly miss the target zone
-      // 70% chance of 200-500, 25% chance of 500-700, 5% chance of 700-800
+      case MomentumBotDifficulty.rookie:
+      // Poor timing - but still some decent shots
+      // Average per spin: ~300-400 (total: 3000-4000)
         final chance = random.nextInt(100);
-        if (chance < 5) return 700 + random.nextInt(101); // 700-800 (rare good hit)
-        if (chance < 30) return 500 + random.nextInt(201); // 500-700 (occasional decent)
-        return 200 + random.nextInt(301); // 200-500 (mostly poor)
+        if (chance < 5) return 700 + random.nextInt(201); // 700-900 (rare good)
+        if (chance < 20) return 500 + random.nextInt(201); // 500-700 (some decent)
+        if (chance < 60) return 300 + random.nextInt(201); // 300-500 (average poor)
+        return 150 + random.nextInt(151); // 150-300 (bad shots)
 
-      case MomentumBotDifficulty.steady:
-      // Average timing - consistent mid-range performance
-      // 15% chance of 200-500, 60% chance of 500-700, 25% chance of 700-900
+      case MomentumBotDifficulty.amateur:
+      // Below average but trying
+      // Average per spin: ~450-550 (total: 4500-5500)
         final chance = random.nextInt(100);
-        if (chance < 25) return 700 + random.nextInt(201); // 700-900 (good hits)
-        if (chance < 85) return 500 + random.nextInt(201); // 500-700 (steady range)
-        return 200 + random.nextInt(301); // 200-500 (occasional miss)
+        if (chance < 10) return 750 + random.nextInt(201); // 750-950 (occasional good)
+        if (chance < 35) return 600 + random.nextInt(151); // 600-750 (decent shots)
+        if (chance < 75) return 400 + random.nextInt(201); // 400-600 (steady range)
+        return 200 + random.nextInt(201); // 200-400 (off shots)
 
-      case MomentumBotDifficulty.precise:
-      // Good timing - frequently hits target zone
-      // 5% chance of 300-500, 30% chance of 500-700, 50% chance of 700-900, 15% chance of 900-1000
+      case MomentumBotDifficulty.skilled:
+      // Average to good players
+      // Average per spin: ~600-700 (total: 6000-7000)
         final chance = random.nextInt(100);
-        if (chance < 15) return 900 + random.nextInt(101); // 900-1000 (excellent)
-        if (chance < 65) return 700 + random.nextInt(201); // 700-900 (very good)
-        if (chance < 95) return 500 + random.nextInt(201); // 500-700 (decent)
-        return 300 + random.nextInt(201); // 300-500 (rare miss)
+        if (chance < 15) return 850 + random.nextInt(151); // 850-1000 (good hits)
+        if (chance < 50) return 650 + random.nextInt(201); // 650-850 (solid performance)
+        if (chance < 85) return 450 + random.nextInt(201); // 450-650 (decent)
+        return 250 + random.nextInt(201); // 250-450 (rare miss)
+
+      case MomentumBotDifficulty.expert:
+      // Good to excellent players
+      // Average per spin: ~750-850 (total: 7500-8500)
+        final chance = random.nextInt(100);
+        if (chance < 25) return 900 + random.nextInt(101); // 900-1000 (frequent excellence)
+        if (chance < 65) return 750 + random.nextInt(151); // 750-900 (very good)
+        if (chance < 90) return 600 + random.nextInt(151); // 600-750 (good)
+        return 400 + random.nextInt(201); // 400-600 (occasional off)
 
       case MomentumBotDifficulty.master:
-      // Excellent timing - almost always hits target, often perfect
-      // 5% chance of 500-700, 40% chance of 700-900, 40% chance of 900-980, 15% chance of 980-1000
+      // Elite level players - should beat most humans
+      // Average per spin: ~850-950 (total: 8500-9500+)
         final chance = random.nextInt(100);
-        if (chance < 15) return 980 + random.nextInt(21); // 980-1000 (near perfect)
-        if (chance < 55) return 900 + random.nextInt(81); // 900-980 (excellent)
-        if (chance < 95) return 700 + random.nextInt(201); // 700-900 (very good)
-        return 500 + random.nextInt(201); // 500-700 (rare off day)
+        if (chance < 40) return 950 + random.nextInt(51); // 950-1000 (frequent perfect)
+        if (chance < 75) return 850 + random.nextInt(101); // 850-950 (excellent)
+        if (chance < 95) return 700 + random.nextInt(151); // 700-850 (very good)
+        return 500 + random.nextInt(201); // 500-700 (rare bad day)
     }
   }
 
@@ -146,37 +176,19 @@ class MomentumBotService {
     'Ryan_Wheel', 'Maya_Spin', 'Luke_Force', 'Zoe_Speed', 'Evan_Flow',
     'Aria_Rush', 'Cole_Power', 'Luna_Energy', 'Max_Dynamic', 'Ivy_Pulse',
 
-    // Tech/Cyber themed
-    'CyberSpin', 'DigitalDisc', 'DataWheel', 'ByteRotation', 'CodeCircle',
-    'NetSpinner', 'WebWheel', 'CloudCircle', 'StreamSpin', 'FlowDisk',
-    'PulseRotation', 'WaveWheel', 'EchoSpin', 'SignalCircle', 'FreqForce',
-    'AmpAccel', 'VoltVelocity', 'CircuitSpin', 'ChipCircle', 'ProcessorPro',
-
-    // Abstract/Cool names
-    'ZenWheel', 'FlowSpin', 'WheelZone', 'SpinFlow', 'CircleRealm',
-    'DiscDimension', 'WheelWave', 'SpinSphere', 'RotationRealm', 'CircleCore',
-    'VortexVision', 'SpiralSoul', 'CircularSage', 'OrbitalOracle', 'CyclicCrush',
-    'RadialRage', 'CircularStorm', 'WheelWhirlwind', 'SpinSpiral', 'DiscDynamo',
-
-    // Tournament themed
-    'ChampionSpin', 'LegendWheel', 'EliteRotation', 'ProSpinner', 'MasterCircle',
-    'TourneyTwist', 'BracketBeast', 'PlayoffPro', 'FinalsSpin', 'CrownCircle',
-    'VictoryVelocity', 'WinnerWheel', 'TriumphTwist', 'GloryGrip', 'PodiumPro',
-
-    // Simple numbered variants
-    'Spin_01', 'Wheel_02', 'Circle_03', 'Disc_04', 'Rotation_05',
-    'Momentum_06', 'Force_07', 'Velocity_08', 'Speed_09', 'Flow_10',
-    'Power_11', 'Energy_12', 'Dynamic_13', 'Pulse_14', 'Rush_15',
+    // Pro player names
+    'ProSpin_Elite', 'WheelMaster_Pro', 'SpinLegend', 'TargetPro_X', 'MomentumGod',
+    'SpinKing_2024', 'WheelChamp', 'PrecisionLord', 'SpinDeity', 'WheelEmperor',
   ];
 
-  // Balanced distribution for realistic tournament progression
-  // 40% wobbler (eliminated early), 35% steady, 20% precise, 5% master
+  // SUPER COMPETITIVE distribution - many more good players
   static MomentumBotDifficulty _getRandomDifficulty() {
     final rand = _random.nextInt(100);
-    if (rand < 40) return MomentumBotDifficulty.wobbler;  // 40% - poor performers
-    if (rand < 75) return MomentumBotDifficulty.steady;   // 35% - average performers
-    if (rand < 95) return MomentumBotDifficulty.precise;  // 20% - good performers
-    return MomentumBotDifficulty.master;                  // 5% - excellent performers
+    if (rand < 25) return MomentumBotDifficulty.rookie;   // 25% - poor (2000-4000)
+    if (rand < 55) return MomentumBotDifficulty.amateur;  // 30% - below avg (3500-5500)
+    if (rand < 80) return MomentumBotDifficulty.skilled;  // 25% - average-good (5000-7000)
+    if (rand < 95) return MomentumBotDifficulty.expert;   // 15% - good-excellent (6500-8500)
+    return MomentumBotDifficulty.master;                  // 5% - elite (8000-9500+)
   }
 
   // Generate unique momentum bot with collision avoidance
@@ -239,7 +251,11 @@ class MomentumBotService {
       }
 
       await batch.commit();
-      print('🎯 Successfully added ${bots.length} bots to momentum tournament $tourneyId');
+      print('🎯 Successfully added ${bots.length} SUPER COMPETITIVE bots to momentum tournament $tourneyId');
+
+      // IMMEDIATELY submit bot results to ensure they participate
+      await submitBotResults(tourneyId, bots);
+
       return bots;
 
     } catch (e) {
@@ -248,17 +264,22 @@ class MomentumBotService {
     }
   }
 
-  // Submit bot results for momentum tournament
+  // Submit bot results for momentum tournament - FASTER SUBMISSION
   static Future<void> submitBotResults(String tourneyId, List<MomentumBotPlayer> bots) async {
     try {
-      print('🎯 Submitting momentum results for ${bots.length} bots');
+      print('🎯 Submitting SUPER COMPETITIVE momentum results for ${bots.length} bots');
 
-      // Submit each bot result with realistic delays
-      for (int i = 0; i < bots.length; i++) {
-        final bot = bots[i];
+      // Also submit results for ALL existing bots in tournament (in case they haven't)
+      final existingBots = await getTournamentBots(tourneyId);
+      final allBots = [...bots, ...existingBots];
+      print('🎯 Total bots to submit: ${allBots.length} (${bots.length} new + ${existingBots.length} existing)');
 
-        // Realistic submission delays (2-6 seconds, spread out)
-        final delay = 2000 + (i * 150) + _random.nextInt(3000);
+      // Submit bot results much faster (reduce delays)
+      for (int i = 0; i < allBots.length; i++) {
+        final bot = allBots[i];
+
+        // Much faster submission delays (0.5-2 seconds instead of 2-6)
+        final delay = 500 + (i * 30) + _random.nextInt(500); // Even faster
 
         Timer(Duration(milliseconds: delay), () async {
           try {
@@ -275,21 +296,28 @@ class MomentumBotService {
               return;
             }
 
-            // Generate bot performance
+            // Generate bot performance (10 spins)
             final spinScores = bot.generateSpinScores();
             final totalScore = spinScores.fold<int>(0, (sum, score) => sum + score);
 
-            // Calculate momentum multiplier based on performance
+            // Calculate momentum multiplier based on performance (same as players)
             double momentum = 1.0;
             for (final score in spinScores) {
-              if (score >= 800) {
-                momentum += 0.3;
-              } else if (score >= 600) {
-                momentum += 0.1;
-              } else if (score < 400) {
-                momentum = math.max(1.0, momentum - 0.2);
+              if (score >= 950) {
+                momentum *= 2.0; // More aggressive
+              } else if (score >= 900) {
+                momentum *= 1.7;
+              } else if (score >= 800) {
+                momentum *= 1.4;
+              } else if (score >= 700) {
+                momentum *= 1.2;
+              } else if (score >= 500) {
+                momentum *= 0.95;
+              } else {
+                momentum *= 0.8;
               }
-              momentum = math.min(momentum, 4.0);
+              momentum = math.min(momentum, 20.0);
+              momentum = math.max(momentum, 0.5);
             }
 
             await _db
@@ -301,13 +329,13 @@ class MomentumBotService {
               'uid': bot.id,
               'totalScore': totalScore,
               'spinScores': spinScores,
-              'momentum': momentum,
+              'maxSpeed': momentum, // Use maxSpeed like players
               'submittedAt': FieldValue.serverTimestamp(),
               'isBot': true,
               'botDifficulty': bot.difficulty.name,
             });
 
-            print('🎯 Momentum bot ${bot.name} (${bot.difficulty.name}) scored $totalScore '
+            print('🎯 COMPETITIVE Bot ${bot.name} (${bot.difficulty.name}) scored $totalScore '
                 'with spins [${spinScores.join(", ")}] and ${momentum.toStringAsFixed(1)}x momentum');
 
           } catch (e) {
@@ -336,6 +364,7 @@ class MomentumBotService {
           name: botData['name'],
           difficulty: MomentumBotDifficulty.values.firstWhere(
                 (d) => d.name == botData['difficulty'],
+            orElse: () => MomentumBotDifficulty.amateur,
           ),
         );
       }).toList();
@@ -345,9 +374,7 @@ class MomentumBotService {
     }
   }
 
-  // NEW: Tournament progression utilities
-
-  // Get tournament round information for momentum tournaments
+  // Rest of methods stay the same...
   static Map<int, String> getTournamentRounds() {
     return {
       1: 'Round of 64',
@@ -359,90 +386,15 @@ class MomentumBotService {
     };
   }
 
-  // Calculate expected advancing players for a round
   static int getAdvancingPlayers(int round, int currentPlayers) {
-    if (round >= 6) return 1; // Finals - only 1 winner
-
-    // Standard tournament elimination
+    if (round >= 6) return 1;
     final targetForNextRound = {
-      1: 32, // From 64 to 32
-      2: 16, // From 32 to 16
-      3: 8,  // From 16 to 8
-      4: 4,  // From 8 to 4
-      5: 2,  // From 4 to 2
+      1: 32, 2: 16, 3: 8, 4: 4, 5: 2,
     };
-
     return math.min(targetForNextRound[round] ?? 1, currentPlayers ~/ 2);
   }
 
-  // Cleanup eliminated bots from tournament
-  static Future<void> cleanupEliminatedBots(
-      String tourneyId,
-      List<String> advancingPlayerIds
-      ) async {
-    try {
-      final tourneyDoc = await _db.collection('momentum_tournaments').doc(tourneyId).get();
-      if (!tourneyDoc.exists) return;
-
-      final data = tourneyDoc.data();
-      final currentBots = data?['bots'] as Map<String, dynamic>? ?? {};
-
-      // Filter to keep only advancing bots
-      final advancingBots = <String, dynamic>{};
-      for (final playerId in advancingPlayerIds) {
-        if (currentBots.containsKey(playerId)) {
-          advancingBots[playerId] = currentBots[playerId];
-        }
-      }
-
-      // Update tournament with only advancing bots
-      await _db.collection('momentum_tournaments').doc(tourneyId).update({
-        'bots': advancingBots,
-      });
-
-      print('🎯 Cleaned up momentum bots: ${currentBots.length - advancingBots.length} eliminated, ${advancingBots.length} advancing');
-
-    } catch (e) {
-      print('🎯 Error cleaning up eliminated momentum bots: $e');
-    }
-  }
-
-  // Get bot statistics for a momentum tournament
-  static Future<Map<String, dynamic>> getTournamentBotStats(String tourneyId) async {
-    try {
-      final tourneyDoc = await _db.collection('momentum_tournaments').doc(tourneyId).get();
-      if (!tourneyDoc.exists) return {};
-
-      final data = tourneyDoc.data();
-      final bots = data?['bots'] as Map<String, dynamic>? ?? {};
-
-      final difficultyCount = <String, int>{};
-      for (final difficulty in MomentumBotDifficulty.values) {
-        difficultyCount[difficulty.name] = 0;
-      }
-
-      for (final botData in bots.values) {
-        if (botData is Map<String, dynamic>) {
-          final difficulty = botData['difficulty'] as String?;
-          if (difficulty != null && difficultyCount.containsKey(difficulty)) {
-            difficultyCount[difficulty] = difficultyCount[difficulty]! + 1;
-          }
-        }
-      }
-
-      return {
-        'totalBots': bots.length,
-        'difficultyDistribution': difficultyCount,
-        'tournamentId': tourneyId,
-      };
-
-    } catch (e) {
-      print('🎯 Error getting momentum tournament bot stats: $e');
-      return {};
-    }
-  }
-
-  // Simulate a complete bot performance for testing/preview
+  // Simulate bot performance for testing
   static Map<String, dynamic> simulateBotPerformance(MomentumBotDifficulty difficulty) {
     final bot = MomentumBotPlayer(
       id: 'test_bot',
@@ -455,14 +407,21 @@ class MomentumBotService {
 
     double momentum = 1.0;
     for (final score in spinScores) {
-      if (score >= 800) {
-        momentum += 0.3;
-      } else if (score >= 600) {
-        momentum += 0.1;
-      } else if (score < 400) {
-        momentum = math.max(1.0, momentum - 0.2);
+      if (score >= 950) {
+        momentum *= 2.0;
+      } else if (score >= 900) {
+        momentum *= 1.7;
+      } else if (score >= 800) {
+        momentum *= 1.4;
+      } else if (score >= 700) {
+        momentum *= 1.2;
+      } else if (score >= 500) {
+        momentum *= 0.95;
+      } else {
+        momentum *= 0.8;
       }
-      momentum = math.min(momentum, 4.0);
+      momentum = math.min(momentum, 20.0);
+      momentum = math.max(momentum, 0.5);
     }
 
     return {

@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart' show psychedelicPalette, backgroundSwapDuration;
+import '../services/maze_bot_service.dart'; // ADDED: Import for bot service
 import 'maze_results_screen.dart';
 
 // Maze cell types
@@ -83,6 +84,31 @@ class _MazeGameScreenState extends State<MazeGameScreen>
   // Database
   final _db = FirebaseFirestore.instance;
   final _uid = FirebaseAuth.instance.currentUser!.uid;
+
+  // FIXED: Bot result triggering method
+  Future<void> _triggerBotResults() async {
+    if (widget.isPractice) return;
+
+    try {
+      print('🧩 Triggering bot results submission for round $_currentRound');
+
+      // Get all bots for this survival
+      final bots = await MazeBotService.getBotsForSurvival(widget.survivalId);
+
+      if (bots.isNotEmpty) {
+        print('🧩 Found ${bots.length} bots, submitting their results');
+
+        // Submit bot results for this round
+        await MazeBotService.submitBotResults(widget.survivalId, _currentRound, bots);
+
+        print('🧩 Bot results submission triggered successfully');
+      } else {
+        print('🧩 No bots found for survival ${widget.survivalId}');
+      }
+    } catch (e) {
+      print('🧩 Error triggering bot results: $e');
+    }
+  }
 
   @override
   void initState() {
@@ -510,16 +536,18 @@ class _MazeGameScreenState extends State<MazeGameScreen>
     );
   }
 
+  // FIXED: Submit round result with bot triggering
   Future<void> _submitRoundResult(bool completed) async {
     if (_hasSubmitted) return;
     _hasSubmitted = true;
 
     try {
+      // Submit player result with unique ID per round
       await _db
           .collection('maze_survival')
           .doc(widget.survivalId)
           .collection('results')
-          .doc(_uid)
+          .doc('${_uid}_round_$_currentRound')
           .set({
         'uid': _uid,
         'round': _currentRound,
@@ -529,6 +557,12 @@ class _MazeGameScreenState extends State<MazeGameScreen>
         'submittedAt': FieldValue.serverTimestamp(),
         'isBot': false,
       });
+
+      print('🧩 Player result submitted for round $_currentRound');
+
+      // TRIGGER BOT RESULTS after player submits
+      await _triggerBotResults();
+
     } catch (e) {
       print('Error submitting maze result: $e');
     }
@@ -866,12 +900,25 @@ class _MazeGameScreenState extends State<MazeGameScreen>
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.white.withOpacity(0.5), width: 3),
+        // FIXED: Opaque background so maze colors are clearly visible
+        color: Colors.black.withOpacity(0.9), // Dark opaque background
+        border: Border.all(color: Colors.white.withOpacity(0.8), width: 3),
         boxShadow: [
           BoxShadow(
-            color: Colors.white.withOpacity(0.3),
+            color: Colors.white.withOpacity(0.4),
             blurRadius: 20,
             spreadRadius: 5,
+          ),
+          // Add psychedelic glow around the maze border
+          BoxShadow(
+            color: colors[1].withOpacity(0.6),
+            blurRadius: 30,
+            spreadRadius: 8,
+          ),
+          BoxShadow(
+            color: colors[3].withOpacity(0.4),
+            blurRadius: 40,
+            spreadRadius: 12,
           ),
         ],
       ),
@@ -909,32 +956,35 @@ class _MazeGameScreenState extends State<MazeGameScreen>
 
     // Determine cell appearance based on phase and type
     if (_currentPhase == GamePhase.study) {
-      // During study phase, show everything with psychedelic colors
+      // During study phase, show everything with clear, distinct colors
       switch (cell.type) {
         case CellType.wall:
-          cellColor = colors[0];
+          cellColor = Colors.grey.shade800; // Dark grey walls
           break;
         case CellType.path:
-          cellColor = cell.isCorrectPath ? colors[2] : colors[4];
+        // FIXED: More distinct colors for correct vs wrong paths
+          cellColor = cell.isCorrectPath
+              ? Colors.green.shade600 // Bright green for correct path
+              : Colors.grey.shade600; // Medium grey for other paths
           break;
         case CellType.start:
-          cellColor = Colors.green;
+          cellColor = Colors.blue.shade600; // Blue start
           cellChild = const Icon(Icons.play_arrow, color: Colors.white, size: 16);
           break;
         case CellType.goal:
-          cellColor = Colors.red;
+          cellColor = Colors.orange.shade600; // Orange goal
           cellChild = const Icon(Icons.flag, color: Colors.white, size: 16);
           break;
         default:
           cellColor = Colors.black;
       }
     } else if (_currentPhase == GamePhase.memory) {
-      // During memory phase, everything is black
-      cellColor = Colors.black;
+      // During memory phase, everything is dark
+      cellColor = Colors.grey.shade900;
     } else {
-      // During navigation, only show visited paths and player
+      // During navigation, show clear feedback
       if (cell.x == _playerX && cell.y == _playerY) {
-        cellColor = Colors.yellow;
+        cellColor = Colors.yellow.shade400; // Bright yellow player
         cellChild = AnimatedBuilder(
           animation: _pulsController,
           builder: (context, child) {
@@ -946,12 +996,15 @@ class _MazeGameScreenState extends State<MazeGameScreen>
           },
         );
       } else if (cell.x == _goalX && cell.y == _goalY) {
-        cellColor = Colors.red;
+        cellColor = Colors.orange.shade600;
         cellChild = const Icon(Icons.flag, color: Colors.white, size: 16);
       } else if (cell.isVisited) {
-        cellColor = cell.isCorrectPath ? Colors.green.withOpacity(0.7) : Colors.red.withOpacity(0.7);
+        // FIXED: Very clear feedback for visited paths
+        cellColor = cell.isCorrectPath
+            ? Colors.green.shade400  // Bright green for correct moves
+            : Colors.red.shade400;   // Bright red for wrong moves
       } else {
-        cellColor = Colors.black;
+        cellColor = Colors.grey.shade900; // Dark unvisited
       }
     }
 
@@ -960,7 +1013,7 @@ class _MazeGameScreenState extends State<MazeGameScreen>
       height: size,
       decoration: BoxDecoration(
         color: cellColor,
-        border: Border.all(color: Colors.white.withOpacity(0.1), width: 0.5),
+        border: Border.all(color: Colors.black, width: 0.5), // Black borders for definition
       ),
       child: cellChild,
     );
