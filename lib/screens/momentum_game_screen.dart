@@ -12,11 +12,13 @@ import 'momentum_results_screen.dart';
 class MomentumGameScreen extends StatefulWidget {
   final bool isPractice;
   final String tourneyId;
+  final Function(Map<String, dynamic>)? onUltimateComplete;
 
   const MomentumGameScreen({
     super.key,
     required this.isPractice,
     required this.tourneyId,
+    this.onUltimateComplete,
   });
 
   @override
@@ -367,6 +369,25 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
 
   void _finishGame() {
     final totalScore = _spinScores.fold<int>(0, (sum, score) => sum + score);
+
+    if (widget.onUltimateComplete != null) {
+      // Calculate rank based on score (1-64, higher score = better rank)
+      int rank = math.max(1, 65 - (totalScore / 100).round());
+      rank = math.min(64, rank);
+
+      final result = {
+        'score': totalScore,
+        'rank': rank,
+        'details': {
+          'totalScore': totalScore,
+          'spins': TOTAL_SPINS,
+          'maxSpeed': _getCurrentSpeedMultiplier(),
+        },
+      };
+
+      widget.onUltimateComplete!(result);
+      return; // Don't navigate, let Ultimate Tournament handle it
+    }
 
     if (!widget.isPractice) {
       _submitResult(totalScore);

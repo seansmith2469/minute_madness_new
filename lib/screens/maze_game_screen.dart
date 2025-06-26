@@ -1,4 +1,4 @@
-// lib/screens/maze_game_screen.dart - MAZE MADNESS LAST MAN STANDING
+// lib/screens/maze_game_screen.dart - MAZE MADNESS LAST MAN STANDING - ULTIMATE TOURNAMENT COMPATIBLE
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -36,12 +36,14 @@ class MazeGameScreen extends StatefulWidget {
   final bool isPractice;
   final String survivalId;
   final int round;
+  final Function(Map<String, dynamic>)? onUltimateComplete;
 
   const MazeGameScreen({
     super.key,
     required this.isPractice,
     required this.survivalId,
     this.round = 1,
+    this.onUltimateComplete,
   });
 
   @override
@@ -65,6 +67,14 @@ class _MazeGameScreenState extends State<MazeGameScreen>
   DateTime? _startTime;
   int _completionTimeMs = 0;
   int _wrongMoves = 0;
+
+  // ULTIMATE TOURNAMENT VARIABLES
+  bool _isUltimateTournament = false;
+  DateTime? _ultimateStartTime;
+  Timer? _ultimateTimer;
+  int _ultimateTimeLeft = 60; // 60 seconds
+  int _totalWrongMoves = 0; // Track across all rounds
+  int _roundsCompleted = 0;
 
   // Maze generation
   late int _mazeSize;
@@ -154,8 +164,63 @@ class _MazeGameScreenState extends State<MazeGameScreen>
       duration: const Duration(milliseconds: 1000),
     );
 
+    // CHECK IF THIS IS ULTIMATE TOURNAMENT
+    _isUltimateTournament = widget.onUltimateComplete != null;
+
+    if (_isUltimateTournament) {
+      _ultimateStartTime = DateTime.now();
+      _startUltimateTimer();
+    }
+
     _currentRound = widget.round;
     _initializeRound();
+  }
+
+  void _startUltimateTimer() {
+    _ultimateTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        _ultimateTimeLeft--;
+      });
+
+      if (_ultimateTimeLeft <= 0) {
+        timer.cancel();
+        _endUltimateTournament();
+      }
+    });
+  }
+
+  void _endUltimateTournament() {
+    if (widget.onUltimateComplete == null) return;
+
+    final totalTime = 60 - _ultimateTimeLeft;
+    final timeBonus = math.max(0, _ultimateTimeLeft * 5); // 5 points per second remaining
+
+    // SMART SCORING: Heavily penalize wrong moves
+    final baseScore = _roundsCompleted * 1000;
+    final errorPenalty = _totalWrongMoves * 100; // 100 points per wrong move
+    final finalScore = math.max(0, baseScore - errorPenalty + timeBonus);
+
+    // Rank based on final score (higher = better)
+    int rank = math.max(1, 65 - (finalScore / 100).round());
+    rank = math.min(64, rank);
+
+    final result = {
+      'score': finalScore,
+      'rank': rank,
+      'details': {
+        'roundsCompleted': _roundsCompleted,
+        'totalWrongMoves': _totalWrongMoves,
+        'timeUsed': totalTime,
+        'timeBonus': timeBonus,
+      },
+    };
+
+    widget.onUltimateComplete!(result);
   }
 
   List<Color> _generateGradient() {
@@ -384,6 +449,7 @@ class _MazeGameScreenState extends State<MazeGameScreen>
     // Check if it's a valid move (not a wall)
     if (_maze[newY][newX].type == CellType.wall) {
       _wrongMoves++;
+      _totalWrongMoves++; // Track total for Ultimate Tournament
       _triggerErrorEffect();
       HapticFeedback.mediumImpact();
       return;
@@ -392,6 +458,7 @@ class _MazeGameScreenState extends State<MazeGameScreen>
     // Check if it's a wrong path
     if (_maze[newY][newX].type == CellType.path && !_maze[newY][newX].isCorrectPath) {
       _wrongMoves++;
+      _totalWrongMoves++; // Track total for Ultimate Tournament
       _triggerErrorEffect();
       HapticFeedback.lightImpact();
     } else {
@@ -431,6 +498,27 @@ class _MazeGameScreenState extends State<MazeGameScreen>
     _triggerSuccessEffect();
     HapticFeedback.heavyImpact();
 
+    // INCREMENT ROUNDS COMPLETED
+    _roundsCompleted++;
+
+    // ULTIMATE TOURNAMENT: Continue to next round if time remaining
+    if (_isUltimateTournament) {
+      if (_ultimateTimeLeft <= 0) {
+        _endUltimateTournament();
+        return;
+      }
+
+      Timer(const Duration(seconds: 1), () {
+        if (mounted && _ultimateTimeLeft > 10) { // Need at least 10 seconds for next round
+          _currentRound++;
+          _initializeRound(); // Start next round
+        } else {
+          _endUltimateTournament(); // Time almost up, end now
+        }
+      });
+      return;
+    }
+
     if (!widget.isPractice) {
       _submitRoundResult(true);
     }
@@ -456,6 +544,12 @@ class _MazeGameScreenState extends State<MazeGameScreen>
 
     _triggerErrorEffect();
     HapticFeedback.heavyImpact();
+
+    // ULTIMATE TOURNAMENT: End immediately on failure
+    if (_isUltimateTournament) {
+      _endUltimateTournament();
+      return;
+    }
 
     if (!widget.isPractice) {
       _submitRoundResult(false);
@@ -587,6 +681,7 @@ class _MazeGameScreenState extends State<MazeGameScreen>
   @override
   void dispose() {
     _phaseTimer.cancel();
+    _ultimateTimer?.cancel(); // Cancel Ultimate Tournament timer
     _backgroundController.dispose();
     _pulsController.dispose();
     _rotationController.dispose();
@@ -777,8 +872,54 @@ class _MazeGameScreenState extends State<MazeGameScreen>
             },
           ),
 
-          // Wrong moves counter
-          if (_wrongMoves > 0)
+          // Timer and error display for Ultimate Tournament
+          if (_isUltimateTournament)
+            AnimatedBuilder(
+              animation: _pulsController,
+              builder: (context, child) {
+                final intensity = _ultimateTimeLeft <= 10 ? 0.7 + (_pulsController.value * 0.3) : 0.7;
+                final timerColor = _ultimateTimeLeft <= 10 ? Colors.red : Colors.orange;
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: timerColor.withOpacity(intensity),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: Colors.white.withOpacity(0.8), width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: timerColor.withOpacity(0.5),
+                        blurRadius: 15,
+                        spreadRadius: 3,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Time: ${_ultimateTimeLeft}s',
+                        style: GoogleFonts.chicle(
+                          fontSize: 14,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'Errors: $_totalWrongMoves',
+                        style: GoogleFonts.chicle(
+                          fontSize: 12,
+                          color: Colors.white.withOpacity(0.9),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            )
+          else if (_wrongMoves > 0)
+          // Regular tournament wrong moves display
             AnimatedBuilder(
               animation: _pulsController,
               builder: (context, child) {

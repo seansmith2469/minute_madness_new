@@ -1,4 +1,4 @@
-// lib/screens/match_game_screen.dart - COMPLETE FIXED VERSION
+// lib/screens/match_game_screen.dart - COMPLETE FIXED VERSION - ULTIMATE TOURNAMENT COMPATIBLE
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -40,11 +40,13 @@ class TarotCard {
 class MatchGameScreen extends StatefulWidget {
   final bool isPractice;
   final String tourneyId;
+  final Function(Map<String, dynamic>)? onUltimateComplete;
 
   const MatchGameScreen({
     super.key,
     required this.isPractice,
     required this.tourneyId,
+    this.onUltimateComplete,
   });
 
   @override
@@ -346,6 +348,27 @@ class _MatchGameScreenState extends State<MatchGameScreen>
 
     _completionController.forward();
 
+    // ULTIMATE TOURNAMENT: Return result immediately
+    if (widget.onUltimateComplete != null) {
+      // Calculate rank based on completion time (1-64, lower time = better rank)
+      int rank = math.max(1, (_completionTimeMs / 1000).round());
+      rank = math.min(64, rank);
+
+      final score = math.max(1000, 60000 - _completionTimeMs);
+
+      final result = {
+        'score': score,
+        'rank': rank,
+        'details': {
+          'completionTimeMs': _completionTimeMs,
+          'penaltySeconds': _penaltySeconds,
+        },
+      };
+
+      widget.onUltimateComplete!(result);
+      return; // Don't navigate, let Ultimate Tournament handle it
+    }
+
     // Use single results screen for both modes
     if (!widget.isPractice) {
       _submitResult();
@@ -415,9 +438,6 @@ class _MatchGameScreenState extends State<MatchGameScreen>
     _completionController.dispose();
     super.dispose();
   }
-
-// UPDATED: Just the build method section that needs to be replaced
-// Replace the build method in your match_game_screen.dart with this version
 
   @override
   Widget build(BuildContext context) {
@@ -686,7 +706,7 @@ class _MatchGameScreenState extends State<MatchGameScreen>
 
                     const SizedBox(height: 20),
 
-// FIXED: Always reserve space for feedback message to prevent layout shifts
+                    // FIXED: Always reserve space for feedback message to prevent layout shifts
                     Container(
                       height: 80, // Fixed height - always reserves this space
                       margin: const EdgeInsets.symmetric(horizontal: 30),

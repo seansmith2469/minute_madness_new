@@ -38,7 +38,12 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
   int _currentGameIndex = 0;
   bool _isLoading = true;
   bool _gameCompleted = false;
+  bool _showingIntermediateResults = false;
   Timer? _transitionTimer;
+
+  // Current standings after each game
+  List<Map<String, dynamic>> _currentStandings = [];
+  int _playerCurrentRank = 0;
 
   // Animations
   late AnimationController _backgroundController;
@@ -237,11 +242,14 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
     }
   }
 
-  void _onGameComplete(Map<String, dynamic> gameResult) {
+  void _onGameComplete(Map<String, dynamic> gameResult) async {
     print('🏆 Game ${_currentGameIndex + 1} completed with result: $gameResult');
 
     // Save player result
-    _savePlayerGameResult(gameResult);
+    await _savePlayerGameResult(gameResult);
+
+    // Get current standings after this game
+    await _updateCurrentStandings();
 
     // Move to next game
     _currentGameIndex++;
@@ -250,8 +258,8 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
       // All games completed
       _showFinalResults();
     } else {
-      // Show transition screen and move to next game
-      _showGameTransition();
+      // Show intermediate results and move to next game
+      _showIntermediateResults();
     }
   }
 
@@ -282,17 +290,81 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
     }
   }
 
-  void _showGameTransition() {
+  Future<void> _updateCurrentStandings() async {
+    try {
+      print('🏆 Updating current standings after game ${_currentGameIndex + 1}');
+
+      // Get current results for games completed so far
+      final resultsSnapshot = await _db
+          .collection('ultimate_tournaments')
+          .doc(widget.tourneyId)
+          .collection('game_results')
+          .get();
+
+      // Group results by player for games completed so far
+      final Map<String, Map<String, dynamic>> playerResults = {};
+
+      for (final doc in resultsSnapshot.docs) {
+        final data = doc.data();
+        final playerId = data['playerId'] as String;
+        final gameType = data['gameType'] as String;
+        final score = data['score'] as int;
+        final rank = data['rank'] as int;
+
+        // Only include games that have been completed
+        final gameIndex = widget.gameOrder.indexWhere((g) => g.name == gameType);
+        if (gameIndex > _currentGameIndex) continue; // Skip future games
+
+        if (!playerResults.containsKey(playerId)) {
+          playerResults[playerId] = {
+            'playerId': playerId,
+            'totalScore': 0,
+            'gamesCompleted': 0,
+            'averageRank': 0.0,
+          };
+        }
+
+        playerResults[playerId]!['totalScore'] += score;
+        playerResults[playerId]!['gamesCompleted'] += 1;
+      }
+
+      // Calculate average ranks and sort
+      final standings = <Map<String, dynamic>>[];
+
+      for (final playerData in playerResults.values) {
+        // Only include players who have completed the current number of games
+        if (playerData['gamesCompleted'] >= _currentGameIndex + 1) {
+          standings.add(playerData);
+        }
+      }
+
+      // Sort by total score (descending)
+      standings.sort((a, b) => (b['totalScore'] as int).compareTo(a['totalScore'] as int));
+
+      // Find player's current rank
+      _playerCurrentRank = standings.indexWhere((player) => player['playerId'] == _uid) + 1;
+      if (_playerCurrentRank == 0) _playerCurrentRank = 64; // If not found, assume last
+
+      _currentStandings = standings;
+
+      print('🏆 Current standings: Player rank $_playerCurrentRank out of ${standings.length}');
+    } catch (e) {
+      print('🏆 Error updating current standings: $e');
+      _playerCurrentRank = 32; // Default fallback
+    }
+  }
+
+  void _showIntermediateResults() {
     setState(() {
-      _gameCompleted = true;
+      _showingIntermediateResults = true;
     });
 
     _transitionController.forward();
 
-    _transitionTimer = Timer(const Duration(seconds: 3), () {
+    _transitionTimer = Timer(const Duration(seconds: 5), () {
       if (mounted) {
         setState(() {
-          _gameCompleted = false;
+          _showingIntermediateResults = false;
         });
         _transitionController.reset();
         _startCurrentGame();
@@ -349,8 +421,8 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
               ),
 
               if (_isLoading) _buildLoadingScreen(),
-              if (_gameCompleted) _buildTransitionScreen(),
-              if (!_isLoading && !_gameCompleted) _buildGameIntroScreen(),
+              if (_showingIntermediateResults) _buildIntermediateResultsScreen(),
+              if (!_isLoading && !_showingIntermediateResults) _buildGameIntroScreen(),
             ],
           );
         },
@@ -491,65 +563,177 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
     );
   }
 
-  Widget _buildTransitionScreen() {
+  Widget _buildIntermediateResultsScreen() {
     return AnimatedBuilder(
       animation: _transitionController,
       builder: (context, child) {
         return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'GAME ${_currentGameIndex} COMPLETE!',
-                style: GoogleFonts.creepster(
-                  fontSize: 28,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 30),
-
-              if (_currentGameIndex < widget.gameOrder.length) ...[
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Game Complete Header
                 Text(
-                  'NEXT GAME:',
-                  style: GoogleFonts.chicle(
-                    fontSize: 18,
-                    color: Colors.white.withOpacity(0.8),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                Text(
-                  _getGameName(widget.gameOrder[_currentGameIndex]).toUpperCase(),
+                  'GAME ${_currentGameIndex} COMPLETE!',
                   style: GoogleFonts.creepster(
-                    fontSize: 32,
-                    color: _getGameColor(widget.gameOrder[_currentGameIndex]),
+                    fontSize: 28,
+                    color: Colors.white,
                     fontWeight: FontWeight.bold,
                   ),
+                  textAlign: TextAlign.center,
                 ),
-              ] else ...[
-                Text(
-                  'ALL GAMES COMPLETE!',
-                  style: GoogleFonts.creepster(
-                    fontSize: 32,
-                    color: Colors.amber,
-                    fontWeight: FontWeight.bold,
+                const SizedBox(height: 30),
+
+                // Current Rank Display
+                Container(
+                  padding: const EdgeInsets.all(25),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: RadialGradient(
+                      colors: [
+                        _getRankColor(_playerCurrentRank).withOpacity(0.8),
+                        _getRankColor(_playerCurrentRank).withOpacity(0.5),
+                        _getRankColor(_playerCurrentRank).withOpacity(0.3),
+                      ],
+                    ),
+                    border: Border.all(color: Colors.white, width: 3),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'CURRENT STANDING',
+                        style: GoogleFonts.creepster(
+                          fontSize: 20,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 15),
+
+                      Text(
+                        '#$_playerCurrentRank',
+                        style: GoogleFonts.chicle(
+                          fontSize: 48,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withOpacity(0.8),
+                              blurRadius: 8,
+                              offset: const Offset(2, 2),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      Text(
+                        'out of 64 ultimate warriors',
+                        style: GoogleFonts.chicle(
+                          fontSize: 16,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                      ),
+
+                      const SizedBox(height: 15),
+
+                      Text(
+                        'After ${_currentGameIndex} game${_currentGameIndex == 1 ? '' : 's'}',
+                        style: GoogleFonts.chicle(
+                          fontSize: 14,
+                          color: Colors.white.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 20),
+
+                const SizedBox(height: 40),
+
+                if (_currentGameIndex < widget.gameOrder.length) ...[
+                  Text(
+                    'NEXT GAME:',
+                    style: GoogleFonts.chicle(
+                      fontSize: 18,
+                      color: Colors.white.withOpacity(0.8),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          _getGameColor(widget.gameOrder[_currentGameIndex]).withOpacity(0.9),
+                          _getGameColor(widget.gameOrder[_currentGameIndex]).withOpacity(0.6),
+                        ],
+                      ),
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: Icon(
+                      _getGameIcon(widget.gameOrder[_currentGameIndex]),
+                      size: 40,
+                      color: Colors.white,
+                    ),
+                  ),
+
+                  const SizedBox(height: 15),
+
+                  Text(
+                    _getGameName(widget.gameOrder[_currentGameIndex]).toUpperCase(),
+                    style: GoogleFonts.creepster(
+                      fontSize: 24,
+                      color: _getGameColor(widget.gameOrder[_currentGameIndex]),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ] else ...[
+                  Text(
+                    'ALL GAMES COMPLETE!',
+                    style: GoogleFonts.creepster(
+                      fontSize: 32,
+                      color: Colors.amber,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Calculating final results...',
+                    style: GoogleFonts.chicle(
+                      fontSize: 18,
+                      color: Colors.white.withOpacity(0.8),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 30),
+
+                // Progress indicator
                 Text(
-                  'Calculating final results...',
+                  'Preparing next challenge...',
                   style: GoogleFonts.chicle(
-                    fontSize: 18,
-                    color: Colors.white.withOpacity(0.8),
+                    fontSize: 16,
+                    color: Colors.white.withOpacity(0.7),
                   ),
                 ),
               ],
-            ],
+            ),
           ),
         );
       },
     );
+  }
+
+  Color _getRankColor(int rank) {
+    if (rank == 1) return Colors.amber;
+    if (rank <= 3) return Colors.orange;
+    if (rank <= 10) return Colors.purple;
+    if (rank <= 20) return Colors.blue;
+    if (rank <= 32) return Colors.green;
+    return Colors.red;
   }
 
   Color _getGameColor(GameType game) {
@@ -631,11 +815,11 @@ class _UltimatePrecisionWrapper extends StatefulWidget {
 class _UltimatePrecisionWrapperState extends State<_UltimatePrecisionWrapper> {
   @override
   Widget build(BuildContext context) {
-    // Use modified precision tap screen that reports back to ultimate tournament
-    return _ModifiedPrecisionTapScreen(
+    return PrecisionTapScreen(
       target: targetDuration,
-      tourneyId: widget.tourneyId,
-      onComplete: widget.onComplete,
+      tourneyId: 'ultimate_${widget.tourneyId}',
+      round: 1,
+      onUltimateComplete: widget.onComplete,
     );
   }
 }
@@ -656,9 +840,10 @@ class _UltimateMomentumWrapper extends StatefulWidget {
 class _UltimateMomentumWrapperState extends State<_UltimateMomentumWrapper> {
   @override
   Widget build(BuildContext context) {
-    return _ModifiedMomentumGameScreen(
-      tourneyId: widget.tourneyId,
-      onComplete: widget.onComplete,
+    return MomentumGameScreen(
+      isPractice: false,
+      tourneyId: 'ultimate_${widget.tourneyId}',
+      onUltimateComplete: widget.onComplete,
     );
   }
 }
@@ -679,9 +864,10 @@ class _UltimateMemoryWrapper extends StatefulWidget {
 class _UltimateMemoryWrapperState extends State<_UltimateMemoryWrapper> {
   @override
   Widget build(BuildContext context) {
-    return _ModifiedMemoryGameScreen(
-      tourneyId: widget.tourneyId,
-      onComplete: widget.onComplete,
+    return MemoryGameScreen(
+      isPractice: false,
+      tourneyId: 'ultimate_${widget.tourneyId}',
+      onUltimateComplete: widget.onComplete,
     );
   }
 }
@@ -702,9 +888,10 @@ class _UltimateMatchWrapper extends StatefulWidget {
 class _UltimateMatchWrapperState extends State<_UltimateMatchWrapper> {
   @override
   Widget build(BuildContext context) {
-    return _ModifiedMatchGameScreen(
-      tourneyId: widget.tourneyId,
-      onComplete: widget.onComplete,
+    return MatchGameScreen(
+      isPractice: false,
+      tourneyId: 'ultimate_${widget.tourneyId}',
+      onUltimateComplete: widget.onComplete,
     );
   }
 }
@@ -725,108 +912,11 @@ class _UltimateMazeWrapper extends StatefulWidget {
 class _UltimateMazeWrapperState extends State<_UltimateMazeWrapper> {
   @override
   Widget build(BuildContext context) {
-    return _ModifiedMazeGameScreen(
-      tourneyId: widget.tourneyId,
-      onComplete: widget.onComplete,
-    );
-  }
-}
-
-// Simplified modified game screens that call back to the ultimate tournament
-// These would be minimal modifications to the existing game screens
-
-class _ModifiedPrecisionTapScreen extends StatelessWidget {
-  final Duration target;
-  final String tourneyId;
-  final Function(Map<String, dynamic>) onComplete;
-
-  const _ModifiedPrecisionTapScreen({
-    required this.target,
-    required this.tourneyId,
-    required this.onComplete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // This would be a modified version of PrecisionTapScreen that calls
-    // onComplete instead of navigating to results
-    return PrecisionTapScreen(
-      target: target,
-      tourneyId: 'ultimate_$tourneyId',
-      round: 1,
-    );
-  }
-}
-
-class _ModifiedMomentumGameScreen extends StatelessWidget {
-  final String tourneyId;
-  final Function(Map<String, dynamic>) onComplete;
-
-  const _ModifiedMomentumGameScreen({
-    required this.tourneyId,
-    required this.onComplete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return MomentumGameScreen(
-      isPractice: false,
-      tourneyId: 'ultimate_$tourneyId',
-    );
-  }
-}
-
-class _ModifiedMemoryGameScreen extends StatelessWidget {
-  final String tourneyId;
-  final Function(Map<String, dynamic>) onComplete;
-
-  const _ModifiedMemoryGameScreen({
-    required this.tourneyId,
-    required this.onComplete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return MemoryGameScreen(
-      isPractice: false,
-      tourneyId: 'ultimate_$tourneyId',
-    );
-  }
-}
-
-class _ModifiedMatchGameScreen extends StatelessWidget {
-  final String tourneyId;
-  final Function(Map<String, dynamic>) onComplete;
-
-  const _ModifiedMatchGameScreen({
-    required this.tourneyId,
-    required this.onComplete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return MatchGameScreen(
-      isPractice: false,
-      tourneyId: 'ultimate_$tourneyId',
-    );
-  }
-}
-
-class _ModifiedMazeGameScreen extends StatelessWidget {
-  final String tourneyId;
-  final Function(Map<String, dynamic>) onComplete;
-
-  const _ModifiedMazeGameScreen({
-    required this.tourneyId,
-    required this.onComplete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
     return MazeGameScreen(
       isPractice: false,
-      survivalId: 'ultimate_$tourneyId',
+      survivalId: 'ultimate_${widget.tourneyId}',
       round: 1,
+      onUltimateComplete: widget.onComplete,
     );
   }
 }

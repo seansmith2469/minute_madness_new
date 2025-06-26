@@ -1,6 +1,6 @@
-// lib/screens/memory_game_screen.dart - PART 1 (Lines 1-700) - ENHANCED WITH PSYCHEDELIC ARROWS
+// lib/screens/memory_game_screen.dart - ENHANCED WITH PSYCHEDELIC ARROWS - ULTIMATE TOURNAMENT COMPATIBLE
 import 'dart:async';
-import 'dart:math';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -33,11 +33,13 @@ class PatternElement {
 class MemoryGameScreen extends StatefulWidget {
   final bool isPractice;
   final String tourneyId;
+  final Function(Map<String, dynamic>)? onUltimateComplete;
 
   const MemoryGameScreen({
     super.key,
     required this.isPractice,
     required this.tourneyId,
+    this.onUltimateComplete,
   });
 
   @override
@@ -60,6 +62,14 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
   DateTime? _gameStartTime;
   DateTime? _levelStartTime;
   int _totalCompletionTimeMs = 0;
+
+  // ULTIMATE TOURNAMENT VARIABLES
+  bool _isUltimateTournament = false;
+  DateTime? _ultimateStartTime;
+  Timer? _ultimateTimer;
+  int _ultimateTimeLeft = 60; // 60 seconds
+  int _totalWrongAttempts = 0; // Track across all levels
+  int _levelsCompleted = 0;
 
   // Timers
   Timer? _patternTimer;
@@ -151,6 +161,14 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
       duration: const Duration(milliseconds: 2500),
     );
 
+    // CHECK IF THIS IS ULTIMATE TOURNAMENT
+    _isUltimateTournament = widget.onUltimateComplete != null;
+
+    if (_isUltimateTournament) {
+      _ultimateStartTime = DateTime.now();
+      _startUltimateTimer();
+    }
+
     // Submit bot results for tournament mode
     if (!widget.isPractice) {
       _submitBotResults();
@@ -160,8 +178,55 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
     _startLevel();
   }
 
+  void _startUltimateTimer() {
+    _ultimateTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        _ultimateTimeLeft--;
+      });
+
+      if (_ultimateTimeLeft <= 0) {
+        timer.cancel();
+        _endUltimateTournament();
+      }
+    });
+  }
+
+  void _endUltimateTournament() {
+    if (widget.onUltimateComplete == null) return;
+
+    final totalTime = 60 - _ultimateTimeLeft;
+    final timeBonus = math.max(0, _ultimateTimeLeft * 5); // 5 points per second remaining
+
+    // SMART SCORING: Heavily penalize wrong attempts
+    final baseScore = _levelsCompleted * 200;
+    final errorPenalty = _totalWrongAttempts * 50; // 50 points per wrong attempt
+    final finalScore = math.max(0, baseScore - errorPenalty + timeBonus);
+
+    // Rank based on final score (higher = better)
+    int rank = math.max(1, 65 - (finalScore / 50).round());
+    rank = math.min(64, rank);
+
+    final result = {
+      'score': finalScore,
+      'rank': rank,
+      'details': {
+        'levelsCompleted': _levelsCompleted,
+        'totalWrongAttempts': _totalWrongAttempts,
+        'timeUsed': totalTime,
+        'timeBonus': timeBonus,
+      },
+    };
+
+    widget.onUltimateComplete!(result);
+  }
+
   List<Color> _generateGradient() {
-    final random = Random();
+    final random = math.Random();
     // ULTRA VIBRANT memory-themed colors
     final memoryColors = [
       Colors.purple.shade900,
@@ -254,7 +319,7 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
   }
 
   void _generatePattern() {
-    final random = Random();
+    final random = math.Random();
     final length = _getPatternLength();
     final useColors = _shouldUseColors();
 
@@ -333,6 +398,7 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
     final isCorrect = inputElement == expectedElement;
 
     if (!isCorrect) {
+      _totalWrongAttempts++; // Track for Ultimate Tournament
       _triggerErrorEffect();
       _endGame(false);
       return;
@@ -413,6 +479,13 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
   }
 
   void _nextLevel() {
+    _levelsCompleted++; // Track for Ultimate Tournament
+
+    if (_isUltimateTournament && _ultimateTimeLeft <= 5) {
+      _endUltimateTournament();
+      return;
+    }
+
     setState(() {
       _currentLevel++;
     });
@@ -436,10 +509,16 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
       _gameOver = true;
     });
 
-    // FIXED: Check if player didn't complete even level 1
     final finalLevel = _currentLevel;
     final isCompleteFailure = finalLevel == 1 && _playerInput.isEmpty;
 
+    // ULTIMATE TOURNAMENT: End immediately
+    if (_isUltimateTournament) {
+      _endUltimateTournament();
+      return;
+    }
+
+    // FIXED: Check if player didn't complete even level 1
     if (!widget.isPractice) {
       // Submit result with special handling for complete failures
       if (isCompleteFailure) {
@@ -686,9 +765,6 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
       },
     );
   }
-  // lib/screens/memory_game_screen.dart - PART 2 (Lines 701+) - ENHANCED UI AND METHODS
-
-  // Continue with Part 2 - Methods and UI
 
   Future<void> _submitResult() async {
     try {
@@ -813,6 +889,7 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
   void dispose() {
     _patternTimer?.cancel();
     _inputTimer?.cancel();
+    _ultimateTimer?.cancel(); // Cancel Ultimate Tournament timer
     _backgroundController.dispose();
     _pulseController.dispose();
     _rotationController.dispose();
@@ -1036,7 +1113,53 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
                               );
                             },
                           ),
-                          if (_isInputMode)
+                          // Ultimate Tournament timer or regular input timer
+                          if (_isUltimateTournament)
+                            AnimatedBuilder(
+                              animation: _pulseController,
+                              builder: (context, child) {
+                                final intensity = _ultimateTimeLeft <= 10 ? 0.7 + (_pulseController.value * 0.3) : 0.7;
+                                final timerColor = _ultimateTimeLeft <= 10 ? Colors.red : Colors.orange;
+
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: timerColor.withOpacity(intensity),
+                                    borderRadius: BorderRadius.circular(15),
+                                    border: Border.all(color: Colors.white.withOpacity(0.8), width: 2),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: timerColor.withOpacity(0.5),
+                                        blurRadius: 15,
+                                        spreadRadius: 3,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Time: ${_ultimateTimeLeft}s',
+                                        style: GoogleFonts.chicle(
+                                          fontSize: 14,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Errors: $_totalWrongAttempts',
+                                        style: GoogleFonts.chicle(
+                                          fontSize: 12,
+                                          color: Colors.white.withOpacity(0.9),
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            )
+                          else if (_isInputMode)
                             AnimatedBuilder(
                               animation: _pulseController,
                               builder: (context, child) {
@@ -1532,5 +1655,3 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
     }
   }
 }
-
-// Add this closing bracket to the end of the main memory_game_screen.dart file

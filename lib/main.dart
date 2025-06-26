@@ -14,13 +14,14 @@ import 'repositories/tournament_repository.dart';
 const backgroundSwapDuration = Duration(seconds: 4);
 
 // FIXED: Remove problematic const declaration and use regular list
-final psychedelicPalette = <Color>[
-  const Color(0xFFFE4A49), // hot pink-red
-  const Color(0xFFFFA600), // tangerine
-  const Color(0xFFFFFF00), // acid yellow
-  const Color(0xFF00E676), // neon green
-  const Color(0xFF00C5FF), // electric cyan
-  const Color(0xFF7C4DFF), // vivid purple
+// Change this line in main.dart:
+const psychedelicPalette = <Color>[
+  Color(0xFFFE4A49), // Remove 'const' from individual colors
+  Color(0xFFFFA600),
+  Color(0xFFFFFF00),
+  Color(0xFF00E676),
+  Color(0xFF00C5FF),
+  Color(0xFF7C4DFF),
 ];
 
 // Group related constants

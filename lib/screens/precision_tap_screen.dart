@@ -1,4 +1,4 @@
-// lib/screens/precision_tap_screen.dart - HIDDEN TIMER WITH TIMEOUT HANDLING
+// lib/screens/precision_tap_screen.dart - HIDDEN TIMER WITH TIMEOUT HANDLING - ULTIMATE TOURNAMENT COMPATIBLE
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -14,12 +14,14 @@ class PrecisionTapScreen extends StatefulWidget {
   final Duration target;
   final String tourneyId;
   final int round;
+  final Function(Map<String, dynamic>)? onUltimateComplete;
 
   const PrecisionTapScreen({
     super.key,
     required this.target,
     required this.tourneyId,
     required this.round,
+    this.onUltimateComplete,
   });
 
   @override
@@ -126,8 +128,8 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
         .collection('results')
         .snapshots();
 
-    // Only start countdown for tournament mode
-    if (!_isPracticeMode) {
+    // Only start countdown for tournament mode (NOT for Ultimate Tournament)
+    if (!_isPracticeMode && widget.onUltimateComplete == null) {
       _startHiddenCountdown(); // RENAMED: Hidden countdown
       _submitBotResultsForRound();
     }
@@ -274,6 +276,25 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
   void _submitAndExit(Duration error) async {
     if (_hasSubmitted) return;
     _hasSubmitted = true;
+
+    // ULTIMATE TOURNAMENT: Return result immediately
+    if (widget.onUltimateComplete != null) {
+      // Calculate rank based on error (1-64, lower error = better rank)
+      final errorMs = error.inMilliseconds.abs();
+      int rank = math.min(64, math.max(1, (errorMs / 50).round() + 1));
+
+      final result = {
+        'score': math.max(0, 1000 - errorMs),
+        'rank': rank,
+        'details': {
+          'errorMs': errorMs,
+          'targetMs': widget.target.inMilliseconds,
+        },
+      };
+
+      widget.onUltimateComplete!(result);
+      return; // Don't navigate, let Ultimate Tournament handle it
+    }
 
     // Only submit to Firebase in tournament mode
     if (!_isPracticeMode) {
@@ -760,8 +781,8 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                 ),
               ),
 
-              // Results counter (only show if not timed out)
-              if (!_isPracticeMode && !_timedOut)
+              // Results counter (only show if not timed out and not Ultimate Tournament)
+              if (!_isPracticeMode && !_timedOut && widget.onUltimateComplete == null)
                 Positioned(
                   bottom: 40,
                   left: 20,

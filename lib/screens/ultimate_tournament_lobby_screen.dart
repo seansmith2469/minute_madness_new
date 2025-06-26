@@ -66,7 +66,7 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
 
     _pulsController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
 
     _gameIconController = AnimationController(
@@ -418,26 +418,19 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
                 ),
               ),
 
-              AnimatedBuilder(
-                animation: _primaryController,
-                builder: (context, child) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[2].withOpacity(0.5),
-                          Colors.transparent,
-                          interpolatedColors[4].withOpacity(0.4),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        transform: GradientRotation(_primaryController.value * 8.0), // FASTER rotation
-                      ),
-                    ),
-                  );
-                },
+              // Simpler overlay to avoid image errors
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      interpolatedColors[2].withOpacity(0.3),
+                      Colors.transparent,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
               ),
 
               Center(
@@ -475,7 +468,6 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
                                         Colors.pink.withOpacity(0.9),
                                         Colors.red.withOpacity(0.9),
                                       ],
-                                      transform: GradientRotation(rotation),
                                     ),
                                     boxShadow: [
                                       BoxShadow(
@@ -513,45 +505,48 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
 
                     const SizedBox(height: 40),
 
+                    // Fixed centered title
                     AnimatedBuilder(
                       animation: _pulsController,
                       builder: (context, child) {
                         final textScale = 1.0 + (_pulsController.value * 0.1);
                         return Transform.scale(
                           scale: textScale,
-                          child: ShaderMask(
-                            shaderCallback: (bounds) => LinearGradient(
-                              colors: [
-                                Colors.red,
-                                Colors.orange,
-                                Colors.yellow,
-                                Colors.green,
-                                Colors.blue,
-                                Colors.indigo,
-                                Colors.purple,
-                                Colors.pink,
-                                Colors.red,
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              transform: GradientRotation(_primaryController.value * 4.0),
-                            ).createShader(bounds),
-                            child: Text(
-                              'LOADING ULTIMATE TOURNAMENT',
-                              style: GoogleFonts.creepster(
-                                fontSize: 28,
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 2.0,
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black.withOpacity(0.9),
-                                    blurRadius: 15,
-                                    offset: const Offset(4, 4),
-                                  ),
+                          child: Container(
+                            alignment: Alignment.center, // Explicit center alignment
+                            child: ShaderMask(
+                              shaderCallback: (bounds) => LinearGradient(
+                                colors: [
+                                  Colors.red,
+                                  Colors.orange,
+                                  Colors.yellow,
+                                  Colors.green,
+                                  Colors.blue,
+                                  Colors.indigo,
+                                  Colors.purple,
+                                  Colors.pink,
+                                  Colors.red,
                                 ],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ).createShader(bounds),
+                              child: Text(
+                                'LOADING ULTIMATE TOURNAMENT',
+                                style: GoogleFonts.creepster(
+                                  fontSize: 28,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 2.0,
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.black.withOpacity(0.9),
+                                      blurRadius: 15,
+                                      offset: const Offset(4, 4),
+                                    ),
+                                  ],
+                                ),
+                                textAlign: TextAlign.center,
                               ),
-                              textAlign: TextAlign.center,
                             ),
                           ),
                         );
@@ -596,28 +591,19 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
                 ),
               ),
 
-              AnimatedBuilder(
-                animation: _primaryController,
-                builder: (context, child) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[1].withOpacity(0.6),
-                          Colors.transparent,
-                          interpolatedColors[3].withOpacity(0.5),
-                          Colors.transparent,
-                          interpolatedColors[5].withOpacity(0.4),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        transform: GradientRotation(_primaryController.value * 8.0),
-                      ),
-                    ),
-                  );
-                },
+              // Simpler overlay
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      interpolatedColors[1].withOpacity(0.3),
+                      Colors.transparent,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
               ),
 
               SafeArea(
@@ -625,54 +611,57 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // ULTIMATE TITLE
+                      // ULTIMATE TITLE - FIXED CENTERING
                       AnimatedBuilder(
                         animation: _pulsController,
                         builder: (context, child) {
                           final titleScale = 1.0 + (_pulsController.value * 0.15);
                           return Transform.scale(
                             scale: titleScale,
-                            child: ShaderMask(
-                              shaderCallback: (bounds) => LinearGradient(
-                                colors: [
-                                  Colors.red,
-                                  Colors.orange,
-                                  Colors.yellow,
-                                  Colors.green,
-                                  Colors.blue,
-                                  Colors.indigo,
-                                  Colors.purple,
-                                  Colors.pink,
-                                  Colors.red,
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                transform: GradientRotation(_primaryController.value * 3.0),
-                              ).createShader(bounds),
-                              child: Text(
-                                'ULTIMATE TOURNAMENT',
-                                style: GoogleFonts.creepster(
-                                  fontSize: 42,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 4.0,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.black.withOpacity(0.9),
-                                      blurRadius: 20,
-                                      offset: const Offset(6, 6),
-                                    ),
-                                    Shadow(
-                                      color: Colors.purple.withOpacity(0.8),
-                                      blurRadius: 30,
-                                      offset: const Offset(-4, -4),
-                                    ),
-                                    Shadow(
-                                      color: Colors.cyan.withOpacity(0.6),
-                                      blurRadius: 40,
-                                      offset: const Offset(0, 0),
-                                    ),
+                            child: Container(
+                              alignment: Alignment.center, // Explicit center alignment
+                              child: ShaderMask(
+                                shaderCallback: (bounds) => LinearGradient(
+                                  colors: [
+                                    Colors.red,
+                                    Colors.orange,
+                                    Colors.yellow,
+                                    Colors.green,
+                                    Colors.blue,
+                                    Colors.indigo,
+                                    Colors.purple,
+                                    Colors.pink,
+                                    Colors.red,
                                   ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ).createShader(bounds),
+                                child: Text(
+                                  'ULTIMATE TOURNAMENT',
+                                  style: GoogleFonts.creepster(
+                                    fontSize: 42,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 4.0,
+                                    shadows: [
+                                      Shadow(
+                                        color: Colors.black.withOpacity(0.9),
+                                        blurRadius: 20,
+                                        offset: const Offset(6, 6),
+                                      ),
+                                      Shadow(
+                                        color: Colors.purple.withOpacity(0.8),
+                                        blurRadius: 30,
+                                        offset: const Offset(-4, -4),
+                                      ),
+                                      Shadow(
+                                        color: Colors.cyan.withOpacity(0.6),
+                                        blurRadius: 40,
+                                        offset: const Offset(0, 0),
+                                      ),
+                                    ],
+                                  ),
+                                  textAlign: TextAlign.center,
                                 ),
                               ),
                             ),
@@ -696,6 +685,7 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
                             ),
                           ],
                         ),
+                        textAlign: TextAlign.center,
                       ),
 
                       const SizedBox(height: 50),
@@ -879,6 +869,7 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
               color: Colors.white,
               fontWeight: FontWeight.bold,
             ),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 15),
 
@@ -1086,30 +1077,34 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
                     },
                   ),
                   const SizedBox(height: 40),
-                  ShaderMask(
-                    shaderCallback: (bounds) => LinearGradient(
-                      colors: [
-                        Colors.amber,
-                        Colors.orange,
-                        Colors.red,
-                        Colors.purple,
-                        Colors.blue,
-                      ],
-                    ).createShader(bounds),
-                    child: Text(
-                      'THE ULTIMATE TOURNAMENT BEGINS!',
-                      style: GoogleFonts.creepster(
-                        fontSize: 44,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 4.0,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black.withOpacity(0.9),
-                            blurRadius: 20,
-                            offset: const Offset(6, 6),
-                          ),
+                  Container(
+                    alignment: Alignment.center, // Fixed center alignment
+                    child: ShaderMask(
+                      shaderCallback: (bounds) => LinearGradient(
+                        colors: [
+                          Colors.amber,
+                          Colors.orange,
+                          Colors.red,
+                          Colors.purple,
+                          Colors.blue,
                         ],
+                      ).createShader(bounds),
+                      child: Text(
+                        'THE ULTIMATE TOURNAMENT BEGINS!',
+                        style: GoogleFonts.creepster(
+                          fontSize: 44,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 4.0,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withOpacity(0.9),
+                              blurRadius: 20,
+                              offset: const Offset(6, 6),
+                            ),
+                          ],
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   ),
@@ -1127,6 +1122,7 @@ class _UltimateTournamentLobbyScreenState extends State<UltimateTournamentLobbyS
                         ),
                       ],
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
