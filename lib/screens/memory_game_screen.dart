@@ -1,4 +1,4 @@
-// lib/screens/memory_game_screen.dart - ENHANCED WITH PSYCHEDELIC ARROWS - ULTIMATE TOURNAMENT COMPATIBLE
+// lib/screens/memory_game_screen.dart - ENHANCED WITH PROGRESSIVE PATTERNS & ULTIMATE TOURNAMENT
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -51,7 +51,8 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
   // Game state
   List<PatternElement> _currentPattern = [];
   List<PatternElement> _playerInput = [];
-  int _currentLevel = 1;
+  List<PatternElement> _basePattern = []; // NEW: Progressive pattern base
+  int _currentLevel = 4; // UPDATED: Start at level 4 for both modes
   bool _isShowingPattern = false;
   bool _isInputMode = false;
   bool _gameOver = false;
@@ -200,25 +201,55 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
     if (widget.onUltimateComplete == null) return;
 
     final totalTime = 60 - _ultimateTimeLeft;
-    final timeBonus = math.max(0, _ultimateTimeLeft * 5); // 5 points per second remaining
 
-    // SMART SCORING: Heavily penalize wrong attempts
-    final baseScore = _levelsCompleted * 200;
-    final errorPenalty = _totalWrongAttempts * 50; // 50 points per wrong attempt
-    final finalScore = math.max(0, baseScore - errorPenalty + timeBonus);
+    // ENHANCED SCORING SYSTEM:
+    // Base points for each level completed:
+    // Level 4 (4 arrows): 175 points
+    // Level 5 (5 arrows): 200 points
+    // Level 6 (6 arrows): 225 points
+    // Level 7 (7 arrows + colors): 300 points
+    // Level 8+ (8+ arrows + colors): 400+ points
 
-    // Rank based on final score (higher = better)
-    int rank = math.max(1, 65 - (finalScore / 50).round());
-    rank = math.min(64, rank);
+    int totalScore = 0;
+    for (int level = 4; level < _currentLevel; level++) {
+      if (level <= 6) {
+        totalScore += 125 + (level * 25); // 225, 250, 275
+      } else if (level == 7) {
+        totalScore += 300; // First color level bonus
+      } else {
+        totalScore += 400 + ((level - 8) * 50); // 400, 450, 500, etc.
+      }
+    }
+
+    // Time bonus: 5 points per second remaining
+    final timeBonus = _ultimateTimeLeft * 5;
+
+    // Error penalty: 100 points per wrong attempt (more severe for ultimate)
+    final errorPenalty = _totalWrongAttempts * 100;
+
+    final finalScore = math.max(0, totalScore + timeBonus - errorPenalty);
+
+    // Rank based on final score (higher = better rank)
+    // Estimate rank based on expected score distribution
+    int rank;
+    if (finalScore >= 2000) rank = 1;
+    else if (finalScore >= 1500) rank = math.min(5, 2 + ((2000 - finalScore) / 100).round());
+    else if (finalScore >= 1000) rank = math.min(15, 6 + ((1500 - finalScore) / 50).round());
+    else if (finalScore >= 500) rank = math.min(30, 16 + ((1000 - finalScore) / 25).round());
+    else if (finalScore >= 100) rank = math.min(50, 31 + ((500 - finalScore) / 20).round());
+    else rank = math.min(64, 51 + ((100 - finalScore) / 10).round());
 
     final result = {
       'score': finalScore,
       'rank': rank,
       'details': {
-        'levelsCompleted': _levelsCompleted,
+        'levelsCompleted': _currentLevel - 4, // Adjust for starting at level 4
+        'maxLevel': _currentLevel - 1,
         'totalWrongAttempts': _totalWrongAttempts,
         'timeUsed': totalTime,
         'timeBonus': timeBonus,
+        'baseScore': totalScore - timeBonus,
+        'errorPenalty': errorPenalty,
       },
     };
 
@@ -311,6 +342,7 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
       _showSuccessEffect = false;
       _showErrorEffect = false;
       _showLevelUpEffect = false;
+      _selectedColor = null; // Reset color selection each level
     });
 
     _levelStartTime = DateTime.now();
@@ -318,12 +350,37 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
     _showPattern();
   }
 
+  // UPDATED: Sequential pattern progression
+  int _getPatternLength() {
+    // Sequential progression: 4, 5, 6, 7, 8, 9, 10, etc.
+    return 4 + (_currentLevel - 4); // Both modes start at level 4 with 4 arrows
+  }
+
+  // UPDATED: Progressive pattern building
   void _generatePattern() {
     final random = math.Random();
-    final length = _getPatternLength();
+    final targetLength = _getPatternLength();
     final useColors = _shouldUseColors();
 
-    _currentPattern = List.generate(length, (index) {
+    // If this is the first level or ultimate tournament restart, create base pattern
+    if (_basePattern.isEmpty || (_isUltimateTournament && _currentLevel == 5)) {
+      _basePattern.clear();
+
+      // Create initial base pattern (4 arrows for both modes)
+      for (int i = 0; i < 4; i++) {
+        final direction = ArrowDirection.values[random.nextInt(4)];
+        PatternColor? color;
+
+        if (useColors) {
+          color = PatternColor.values[random.nextInt(PatternColor.values.length)];
+        }
+
+        _basePattern.add(PatternElement(direction, color));
+      }
+    }
+
+    // Extend base pattern to target length
+    while (_basePattern.length < targetLength) {
       final direction = ArrowDirection.values[random.nextInt(4)];
       PatternColor? color;
 
@@ -331,19 +388,16 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
         color = PatternColor.values[random.nextInt(PatternColor.values.length)];
       }
 
-      return PatternElement(direction, color);
-    });
+      _basePattern.add(PatternElement(direction, color));
+    }
+
+    // Use the base pattern up to target length
+    _currentPattern = _basePattern.take(targetLength).toList();
   }
 
-  int _getPatternLength() {
-    if (_currentLevel <= 3) return 2 + _currentLevel; // 3, 4, 5
-    if (_currentLevel <= 6) return 3 + _currentLevel; // 7, 8, 9
-    if (_currentLevel <= 10) return 4 + _currentLevel; // 11, 12, 13, 14
-    return 15 + (_currentLevel - 10); // 15+
-  }
-
+  // UPDATED: Colors start at level 7 (when pattern has 7 arrows)
   bool _shouldUseColors() {
-    return _currentLevel >= 7; // Colors start at level 7
+    return _getPatternLength() >= 7;
   }
 
   void _showPattern() {
@@ -497,7 +551,7 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
     });
   }
 
-  // UPDATED: _endGame method with timeout detection
+  // UPDATED: Enhanced endGame with ultimate tournament restart logic
   void _endGame(bool won) {
     if (_hasSubmitted) return;
     _hasSubmitted = true;
@@ -510,19 +564,35 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
     });
 
     final finalLevel = _currentLevel;
-    final isCompleteFailure = finalLevel == 1 && _playerInput.isEmpty;
+    final isCompleteFailure = finalLevel == 4 && _playerInput.isEmpty;
 
-    // ULTIMATE TOURNAMENT: End immediately
+    // ULTIMATE TOURNAMENT: Handle restart at level 5
     if (_isUltimateTournament) {
-      _endUltimateTournament();
-      return;
+      if (!won && finalLevel < 5) {
+        // Player failed before reaching minimum level - restart at level 5
+        Timer(const Duration(seconds: 1), () {
+          if (mounted) {
+            setState(() {
+              _currentLevel = 5;
+              _hasSubmitted = false;
+              _gameOver = false;
+              _basePattern.clear(); // Clear base pattern for fresh start
+              _selectedColor = null;
+            });
+            _startLevel();
+          }
+        });
+        return;
+      } else {
+        _endUltimateTournament();
+        return;
+      }
     }
 
-    // FIXED: Check if player didn't complete even level 1
+    // Regular tournament logic
     if (!widget.isPractice) {
-      // Submit result with special handling for complete failures
       if (isCompleteFailure) {
-        _submitWorstPossibleResult(); // New method for last place
+        _submitWorstPossibleResult();
       } else {
         _submitResult();
       }
@@ -816,11 +886,12 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
     if (isCompleteFailure) {
       title = '⏰ Time\'s Up!';
       message = 'You didn\'t complete even the first pattern!\n\n'
-          'The first level only has 3 arrows - anyone can do it!\n\n'
+          'The first level only has 4 arrows - anyone can do it!\n\n'
           'Try focusing and tapping faster next time.';
     } else {
       title = won ? '🎉 Victory!' : '💥 Game Over';
       message = 'You reached Level $_currentLevel!\n\n'
+          'Pattern length: ${_getPatternLength()} arrows\n\n'
           '${won ? 'Incredible memory skills!' : 'Better luck next time!'}';
     }
 
@@ -1113,13 +1184,14 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
                               );
                             },
                           ),
-                          // Ultimate Tournament timer or regular input timer
+                          // UPDATED: Ultimate Tournament timer or regular input timer
                           if (_isUltimateTournament)
                             AnimatedBuilder(
                               animation: _pulseController,
                               builder: (context, child) {
                                 final intensity = _ultimateTimeLeft <= 10 ? 0.7 + (_pulseController.value * 0.3) : 0.7;
-                                final timerColor = _ultimateTimeLeft <= 10 ? Colors.red : Colors.orange;
+                                final timerColor = _ultimateTimeLeft <= 10 ? Colors.red :
+                                _ultimateTimeLeft <= 30 ? Colors.orange : Colors.green;
 
                                 return Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
@@ -1139,17 +1211,17 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
-                                        'Time: ${_ultimateTimeLeft}s',
+                                        '⏱️ ${_ultimateTimeLeft}s',
                                         style: GoogleFonts.chicle(
-                                          fontSize: 14,
+                                          fontSize: 16,
                                           color: Colors.white,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
                                       Text(
-                                        'Errors: $_totalWrongAttempts',
+                                        'Arrows: ${_getPatternLength()} | Errors: $_totalWrongAttempts',
                                         style: GoogleFonts.chicle(
-                                          fontSize: 12,
+                                          fontSize: 11,
                                           color: Colors.white.withOpacity(0.9),
                                           fontWeight: FontWeight.bold,
                                         ),

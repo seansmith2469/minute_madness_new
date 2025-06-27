@@ -1,4 +1,4 @@
-// lib/screens/precision_tap_screen.dart - HIDDEN TIMER WITH TIMEOUT HANDLING - ULTIMATE TOURNAMENT COMPATIBLE
+// lib/screens/precision_tap_screen.dart - ULTIMATE TOURNAMENT 3-ROUND FORMAT
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -36,10 +36,20 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
   bool _isRunning = false;
   bool _showButton = true;
   bool _hasSubmitted = false;
-  bool _timedOut = false; // NEW: Track if user timed out
+  bool _timedOut = false;
 
   Timer? _countdownTimer;
-  int _remainingSeconds = 10; // HIDDEN - user doesn't see this anymore
+  int _remainingSeconds = 10; // For regular tournament
+
+  // ULTIMATE TOURNAMENT VARIABLES
+  bool _isUltimateTournament = false;
+  int _currentRound = 1; // Current round (1, 2, or 3)
+  List<int> _roundErrors = []; // Store error in ms for each round
+  Timer? _ultimateTimer;
+  int _ultimateTimeLeft = 30; // 30 seconds total for 3 rounds
+  DateTime? _ultimateStartTime;
+  bool _showInstructions = true;
+  bool _gameComplete = false;
 
   // PSYCHEDELIC ANIMATION CONTROLLERS
   late AnimationController _backgroundController;
@@ -49,6 +59,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
   late AnimationController _buttonController;
   late AnimationController _explosionController;
   late AnimationController _perfectController;
+  late AnimationController _instructionController;
 
   late List<Color> _currentColors;
   late List<Color> _nextColors;
@@ -71,13 +82,16 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
   void initState() {
     super.initState();
 
+    // Check if this is Ultimate Tournament
+    _isUltimateTournament = widget.onUltimateComplete != null;
+
     // Initialize INTENSE psychedelic controllers
     _currentColors = _generateGradient();
     _nextColors = _generateGradient();
 
     _backgroundController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 1), // SUPER FAST for intensity
+      duration: const Duration(seconds: 1),
     )..addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _currentColors = List.from(_nextColors);
@@ -116,28 +130,125 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
       duration: const Duration(milliseconds: 2000),
     );
 
+    _instructionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+
     // Initialize cached target text once
     _cachedTargetText = 'Aim for ${widget.target.inSeconds == 0 ? widget.target.inMilliseconds : widget.target.inSeconds}s';
 
-    // Initialize stream once
-    _resultsStream = FirebaseFirestore.instance
-        .collection('tournaments')
-        .doc(widget.tourneyId)
-        .collection('rounds')
-        .doc('round_${widget.round}')
-        .collection('results')
-        .snapshots();
-
-    // Only start countdown for tournament mode (NOT for Ultimate Tournament)
-    if (!_isPracticeMode && widget.onUltimateComplete == null) {
-      _startHiddenCountdown(); // RENAMED: Hidden countdown
-      _submitBotResultsForRound();
+    // Initialize stream once (only for regular tournament)
+    if (!_isUltimateTournament) {
+      _resultsStream = FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(widget.tourneyId)
+          .collection('rounds')
+          .doc('round_${widget.round}')
+          .collection('results')
+          .snapshots();
     }
+
+    // Ultimate Tournament: Show instructions initially
+    if (_isUltimateTournament) {
+      _showInstructions = true;
+      // Auto-hide instructions after 4 seconds
+      Timer(const Duration(seconds: 4), () {
+        if (mounted) {
+          _hideInstructions();
+        }
+      });
+    } else {
+      // Regular tournament: Start countdown and submit bots
+      if (!_isPracticeMode) {
+        _startHiddenCountdown();
+        _submitBotResultsForRound();
+      }
+    }
+  }
+
+  void _hideInstructions() {
+    _instructionController.forward().then((_) {
+      if (mounted) {
+        setState(() {
+          _showInstructions = false;
+        });
+        _startUltimateTimer();
+      }
+    });
+  }
+
+  void _startUltimateTimer() {
+    _ultimateStartTime = DateTime.now();
+    _ultimateTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        _ultimateTimeLeft--;
+      });
+
+      if (_ultimateTimeLeft <= 0) {
+        timer.cancel();
+        _endUltimateGame();
+      }
+    });
+  }
+
+  void _endUltimateGame() {
+    if (_gameComplete || widget.onUltimateComplete == null) return;
+
+    setState(() {
+      _gameComplete = true;
+      _isRunning = false;
+      _showButton = false;
+    });
+
+    // Calculate total error across all completed rounds
+    final totalError = _roundErrors.fold(0, (sum, error) => sum + error);
+
+    // If player didn't complete 3 rounds, add penalty for incomplete rounds
+    final missedRounds = 3 - _roundErrors.length;
+    final penaltyError = missedRounds * 5000; // 5 second penalty per missed round
+    final finalError = totalError + penaltyError;
+
+    // Calculate rank based on total error (lower = better)
+    int rank;
+    if (finalError <= 150) rank = 1; // Amazing performance
+    else if (finalError <= 300) rank = math.min(5, 2 + ((finalError - 150) / 30).round());
+    else if (finalError <= 600) rank = math.min(15, 6 + ((finalError - 300) / 30).round());
+    else if (finalError <= 1000) rank = math.min(30, 16 + ((finalError - 600) / 25).round());
+    else if (finalError <= 2000) rank = math.min(50, 31 + ((finalError - 1000) / 50).round());
+    else rank = math.min(64, 51 + ((finalError - 2000) / 200).round());
+
+    final result = {
+      'score': math.max(0, 5000 - finalError), // Higher score for lower error
+      'rank': rank,
+      'details': {
+        'totalErrorMs': finalError,
+        'roundsCompleted': _roundErrors.length,
+        'roundErrors': _roundErrors,
+        'penaltyMs': penaltyError,
+      },
+    };
+
+    // Show final result before calling completion
+    setState(() {
+      _cachedResultText = 'GAME COMPLETE!\n'
+          'Rounds: ${_roundErrors.length}/3\n'
+          'Total Error: ${finalError}ms\n'
+          'Rank: #$rank';
+    });
+
+    Timer(const Duration(seconds: 2), () {
+      widget.onUltimateComplete!(result);
+    });
   }
 
   List<Color> _generateGradient() {
     final random = math.Random();
-    // SUPER VIBRANT colors for gameplay intensity
     final ultraVibrantColors = [
       Colors.red.shade900,
       Colors.orange.shade800,
@@ -156,7 +267,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
     ];
 
     return List.generate(
-        8, (_) => ultraVibrantColors[random.nextInt(ultraVibrantColors.length)]); // EVEN MORE colors
+        8, (_) => ultraVibrantColors[random.nextInt(ultraVibrantColors.length)]);
   }
 
   Future<void> _submitBotResultsForRound() async {
@@ -210,7 +321,6 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
     }
   }
 
-  // RENAMED: Hidden countdown - user doesn't see the timer
   void _startHiddenCountdown() {
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
@@ -220,18 +330,15 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
 
       _remainingSeconds--;
 
-      // NO setState here - user doesn't see the countdown!
-
       if (_remainingSeconds <= 0) {
         timer.cancel();
         if (!_hasSubmitted && !_timedOut) {
-          _handleTimeout(); // NEW: Handle timeout properly
+          _handleTimeout();
         }
       }
     });
   }
 
-  // NEW: Handle timeout scenario
   void _handleTimeout() {
     if (_hasSubmitted || _timedOut) return;
 
@@ -242,10 +349,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
       _cachedResultText = "⏰ TIME RAN OUT!\nLast place this round";
     });
 
-    // Trigger timeout explosion effect
     _explosionController.forward();
-
-    // Submit worst possible score (maximum error)
     _submitAndExit(const Duration(milliseconds: 99999));
   }
 
@@ -277,26 +381,34 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
     if (_hasSubmitted) return;
     _hasSubmitted = true;
 
-    // ULTIMATE TOURNAMENT: Return result immediately
-    if (widget.onUltimateComplete != null) {
-      // Calculate rank based on error (1-64, lower error = better rank)
-      final errorMs = error.inMilliseconds.abs();
-      int rank = math.min(64, math.max(1, (errorMs / 50).round() + 1));
+    // ULTIMATE TOURNAMENT: Handle 3-round format
+    if (_isUltimateTournament) {
+      // Add this round's error
+      _roundErrors.add(error.inMilliseconds.abs());
 
-      final result = {
-        'score': math.max(0, 1000 - errorMs),
-        'rank': rank,
-        'details': {
-          'errorMs': errorMs,
-          'targetMs': widget.target.inMilliseconds,
-        },
-      };
+      if (_currentRound < 3 && !_gameComplete) {
+        // Move to next round
+        setState(() {
+          _currentRound++;
+          _hasSubmitted = false;
+          _showButton = true;
+          _cachedResultText = null;
+          _isPerfectHit = false;
+          _showPerfectEffect = false;
+        });
 
-      widget.onUltimateComplete!(result);
-      return; // Don't navigate, let Ultimate Tournament handle it
+        // Reset animations for next round
+        _explosionController.reset();
+        _perfectController.reset();
+        return;
+      } else {
+        // All 3 rounds complete or time ran out
+        _endUltimateGame();
+        return;
+      }
     }
 
-    // Only submit to Firebase in tournament mode
+    // Regular tournament logic
     if (!_isPracticeMode) {
       await _submitResult(error, widget.tourneyId, widget.round);
 
@@ -315,8 +427,8 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
         );
       }
     } else {
-      // In practice mode, reset for another attempt
-      await Future.delayed(const Duration(seconds: 3)); // Longer to see effects
+      // Practice mode reset
+      await Future.delayed(const Duration(seconds: 3));
       if (mounted) {
         setState(() {
           _hasSubmitted = false;
@@ -324,10 +436,9 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
           _cachedResultText = null;
           _isPerfectHit = false;
           _showPerfectEffect = false;
-          _timedOut = false; // Reset timeout state
+          _timedOut = false;
         });
 
-        // Reset animations
         _explosionController.reset();
         _perfectController.reset();
       }
@@ -335,11 +446,10 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
   }
 
   void _handleTap() {
-    // PREVENT any action if timed out
-    if (_timedOut) return;
+    if (_timedOut || _gameComplete || _showInstructions) return;
 
     if (!_isRunning) {
-      // START BUTTON PRESSED - PSYCHEDELIC EXPLOSION!
+      // START BUTTON PRESSED
       setState(() {
         _startTime = DateTime.now();
         _elapsed = null;
@@ -350,7 +460,6 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
         _showPerfectEffect = false;
       });
 
-      // Button press animation
       _buttonController.forward().then((_) => _buttonController.reverse());
 
     } else {
@@ -365,7 +474,13 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
       final errorMs = error.inMilliseconds.abs();
       _isPerfectHit = errorMs <= 50;
 
-      _cachedResultText = _formatResult(elapsed, error);
+      // Show result with round info for Ultimate Tournament
+      if (_isUltimateTournament) {
+        final roundInfo = 'Round $_currentRound/3';
+        _cachedResultText = '$roundInfo\n${_formatResult(elapsed, error)}';
+      } else {
+        _cachedResultText = _formatResult(elapsed, error);
+      }
 
       setState(() {
         _elapsed = elapsed;
@@ -375,7 +490,6 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
         _showPerfectEffect = _isPerfectHit;
       });
 
-      // TRIGGER PSYCHEDELIC EFFECTS!
       _explosionController.forward();
 
       if (_isPerfectHit) {
@@ -398,6 +512,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
   @override
   void dispose() {
     _countdownTimer?.cancel();
+    _ultimateTimer?.cancel();
     _backgroundController.dispose();
     _pulsController.dispose();
     _rotationController.dispose();
@@ -405,6 +520,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
     _buttonController.dispose();
     _explosionController.dispose();
     _perfectController.dispose();
+    _instructionController.dispose();
     super.dispose();
   }
 
@@ -426,19 +542,19 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
           return Stack(
             fit: StackFit.expand,
             children: [
-              // PSYCHEDELIC BACKGROUND - INTENSE!
+              // PSYCHEDELIC BACKGROUND
               Container(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     colors: interpolatedColors,
                     center: Alignment.center,
-                    radius: _isRunning ? 2.0 : 1.0, // Expands when running!
+                    radius: _isRunning ? 2.0 : 1.0,
                     stops: [0.0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.85, 1.0],
                   ),
                 ),
               ),
 
-              // ROTATING OVERLAY 1
+              // ROTATING OVERLAY
               AnimatedBuilder(
                 animation: _rotationController,
                 builder: (context, child) {
@@ -465,7 +581,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
               AnimatedBuilder(
                 animation: _pulsController,
                 builder: (context, child) {
-                  final intensity = _isRunning ? 0.6 : 0.3; // More intense when running
+                  final intensity = _isRunning ? 0.6 : 0.3;
                   return Container(
                     decoration: BoxDecoration(
                       gradient: RadialGradient(
@@ -482,7 +598,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                 },
               ),
 
-              // PERFECT HIT EXPLOSION EFFECT!
+              // PERFECT HIT EXPLOSION EFFECT
               if (_showPerfectEffect)
                 AnimatedBuilder(
                   animation: _perfectController,
@@ -498,14 +614,14 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                             Colors.transparent,
                           ],
                           center: Alignment.center,
-                          radius: explosion * 3.0, // Expanding explosion
+                          radius: explosion * 3.0,
                         ),
                       ),
                     );
                   },
                 ),
 
-              // TIMEOUT EXPLOSION EFFECT (red/orange for timeout)
+              // TIMEOUT EXPLOSION EFFECT
               if (_timedOut)
                 AnimatedBuilder(
                   animation: _explosionController,
@@ -521,7 +637,82 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                             Colors.transparent,
                           ],
                           center: Alignment.center,
-                          radius: explosion * 3.5, // Bigger explosion for timeout
+                          radius: explosion * 3.5,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+              // ULTIMATE TOURNAMENT INSTRUCTIONS OVERLAY
+              if (_isUltimateTournament && _showInstructions)
+                AnimatedBuilder(
+                  animation: _instructionController,
+                  builder: (context, child) {
+                    final fade = _instructionController.value;
+                    return Container(
+                      color: Colors.black.withOpacity(0.8 * (1 - fade)),
+                      child: Center(
+                        child: Transform.scale(
+                          scale: 1.0 - (fade * 0.3),
+                          child: Container(
+                            margin: const EdgeInsets.all(20),
+                            padding: const EdgeInsets.all(30),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(25),
+                              gradient: RadialGradient(
+                                colors: [
+                                  Colors.purple.withOpacity(0.9),
+                                  Colors.blue.withOpacity(0.7),
+                                  Colors.cyan.withOpacity(0.5),
+                                ],
+                              ),
+                              border: Border.all(color: Colors.white, width: 3),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '⚡ MINUTE MADNESS ⚡',
+                                  style: GoogleFonts.creepster(
+                                    fontSize: 32,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 20),
+                                Text(
+                                  '🎯 Complete 3 rounds\n'
+                                      '⏱️ 30 seconds total time\n'
+                                      '🏆 Lowest total error wins\n'
+                                      '🎮 Stop timer at exactly 3 seconds',
+                                  style: GoogleFonts.chicle(
+                                    fontSize: 18,
+                                    color: Colors.white,
+                                    height: 1.5,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 20),
+                                Container(
+                                  padding: const EdgeInsets.all(15),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withOpacity(0.8),
+                                    borderRadius: BorderRadius.circular(15),
+                                  ),
+                                  child: Text(
+                                    'Starting in a few seconds...',
+                                    style: GoogleFonts.chicle(
+                                      fontSize: 16,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     );
@@ -533,10 +724,57 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // REMOVED: Tournament countdown timer - now hidden!
-                    // NO MORE visible countdown timer for user
+                    // ULTIMATE TOURNAMENT HEADER
+                    if (_isUltimateTournament && !_showInstructions) ...[
+                      AnimatedBuilder(
+                        animation: _scaleController,
+                        builder: (context, child) {
+                          final scale = 1.0 + (_scaleController.value * 0.05);
+                          final timeColor = _ultimateTimeLeft <= 10 ? Colors.red :
+                          _ultimateTimeLeft <= 20 ? Colors.orange : Colors.green;
 
-                    // PERFECT HIT TEXT EFFECT!
+                          return Transform.scale(
+                            scale: scale,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                gradient: LinearGradient(
+                                  colors: [
+                                    timeColor.withOpacity(0.8),
+                                    timeColor.withOpacity(0.6),
+                                  ],
+                                ),
+                                border: Border.all(color: Colors.white, width: 2),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    'Round $_currentRound/3 | Time: ${_ultimateTimeLeft}s',
+                                    style: GoogleFonts.chicle(
+                                      fontSize: 18,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  if (_roundErrors.isNotEmpty)
+                                    Text(
+                                      'Errors: ${_roundErrors.join(', ')}ms',
+                                      style: GoogleFonts.chicle(
+                                        fontSize: 14,
+                                        color: Colors.white.withOpacity(0.9),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+
+                    // PERFECT HIT TEXT EFFECT
                     if (_showPerfectEffect)
                       AnimatedBuilder(
                         animation: _perfectController,
@@ -581,14 +819,13 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                       ),
 
                     // Result display
-                    if (_cachedResultText != null) ...[
+                    if (_cachedResultText != null && !_showInstructions) ...[
                       AnimatedBuilder(
                         animation: _explosionController,
                         builder: (context, child) {
                           final scale = 1.0 + (_explosionController.value * 0.3);
                           final colorShift = _explosionController.value;
 
-                          // Different colors for timeout vs normal result
                           final gradientColors = _timedOut ? [
                             Color.lerp(Colors.red, Colors.white, colorShift * 0.5)!.withOpacity(0.9),
                             Color.lerp(Colors.orange, Colors.yellow, colorShift * 0.3)!.withOpacity(0.7),
@@ -618,11 +855,6 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                                     blurRadius: 20,
                                     spreadRadius: 5,
                                   ),
-                                  BoxShadow(
-                                    color: (_timedOut ? Colors.red : interpolatedColors[1]).withOpacity(0.7),
-                                    blurRadius: 30,
-                                    offset: const Offset(0, 0),
-                                  ),
                                 ],
                               ),
                               child: Text(
@@ -648,8 +880,8 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                       const SizedBox(height: 40),
                     ],
 
-                    // THE PSYCHEDELIC BUTTON!
-                    if (_showButton && !_timedOut) // HIDE button if timed out
+                    // THE PSYCHEDELIC BUTTON
+                    if (_showButton && !_timedOut && !_showInstructions && !_gameComplete)
                       AnimatedBuilder(
                         animation: _buttonController,
                         builder: (context, child) {
@@ -735,7 +967,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                       ),
 
                     // Target instruction
-                    if (_isRunning && !_timedOut) ...[
+                    if (_isRunning && !_timedOut && !_showInstructions) ...[
                       const SizedBox(height: 30),
                       AnimatedBuilder(
                         animation: _scaleController,
@@ -781,8 +1013,8 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                 ),
               ),
 
-              // Results counter (only show if not timed out and not Ultimate Tournament)
-              if (!_isPracticeMode && !_timedOut && widget.onUltimateComplete == null)
+              // Results counter (only show for regular tournament)
+              if (!_isPracticeMode && !_timedOut && !_isUltimateTournament)
                 Positioned(
                   bottom: 40,
                   left: 20,
