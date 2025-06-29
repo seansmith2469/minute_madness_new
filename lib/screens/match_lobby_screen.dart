@@ -1,4 +1,4 @@
-// lib/screens/match_lobby_screen.dart - MATCH MADNESS LOBBY + RANDOM START
+// lib/screens/match_lobby_screen.dart - ADDED 15 SECOND AD COUNTDOWN TO ORIGINAL
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -32,6 +32,13 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
   List<MatchBotPlayer> _tournamentBots = [];
   int _displayedPlayerCount = 0;
   int _actualPlayerCount = 0;
+  int _realPlayerCount = 1;
+
+  // ADDED: Ad countdown functionality
+  int _adCountdown = 0;
+  bool _isShowingAd = false;
+  bool _isFilling = false;
+  int _startingPlayerCount = 0; // Random starting count to simulate ongoing tournament
 
   // OPTIMIZED: Reduced animation controllers for better performance
   late AnimationController _primaryController;  // Combined background + rotation
@@ -99,140 +106,256 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
       final snap = await _db
           .collection('match_tournaments')
           .where('status', isEqualTo: 'waiting')
-          .where('playerCount', isLessThan: TOURNAMENT_SIZE)
+          .where('realPlayerCount', isLessThan: TOURNAMENT_SIZE)
           .limit(1)
           .get();
 
       DocumentReference doc;
       if (snap.docs.isEmpty) {
-        print('Match Creating new match tournament (max $TOURNAMENT_SIZE players)');
+        print('Match Creating new match tournament');
 
-        // RANDOM STARTING PLAYER COUNT (1-64)
+        // REALISTIC: Start with random player count (10-50) to simulate ongoing tournament
         final random = math.Random();
-        final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1; // 1 to 64
+        _startingPlayerCount = 10 + random.nextInt(41); // 10-50 players
 
         doc = await _db.collection('match_tournaments').add({
           'status': 'waiting',
           'players': [_uid],
-          'playerCount': randomStartCount, // CHANGED: Random instead of 1
+          'playerCount': _startingPlayerCount + 1, // Include the real player
+          'realPlayers': [_uid],
+          'realPlayerCount': 1,
           'maxPlayers': TOURNAMENT_SIZE,
           'createdAt': FieldValue.serverTimestamp(),
+          'gameType': 'match_madness',
           'bots': <String, dynamic>{},
         });
         _tournamentCreatedTime = DateTime.now();
-        print('Match Created tournament with ID: ${doc.id}, starting with $randomStartCount players');
+        print('Match Created tournament with ID: ${doc.id}, starting with ${_startingPlayerCount + 1} players');
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = randomStartCount; // CHANGED: Use random count
-            _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
+            _actualPlayerCount = _startingPlayerCount + 1;
+            _displayedPlayerCount = _startingPlayerCount + 1;
+            _realPlayerCount = 1;
           });
         }
-        _startAutoFillTimer();
+        _startRealisticTournamentFill();
       } else {
         print('Match Joining existing match tournament');
         doc = snap.docs.first.reference;
 
-        final tourneyData = snap.docs.first.data() as Map<String, dynamic>;
-        final currentCount = tourneyData['playerCount'] as int? ?? 1;
+        final tournamentData = snap.docs.first.data() as Map<String, dynamic>;
+        final realPlayerCount = tournamentData['realPlayerCount'] as int? ?? 1;
+        final totalPlayerCount = tournamentData['playerCount'] as int? ?? 1;
 
-        if (currentCount >= TOURNAMENT_SIZE) {
-          print('Match Tournament is full, creating new one instead');
-
-          // RANDOM STARTING PLAYER COUNT for full tournament case
+        if (realPlayerCount >= TOURNAMENT_SIZE) {
+          print('Match Tournament has max real players, creating new one');
+          // Create new tournament with random starting count
           final random = math.Random();
-          final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1;
+          _startingPlayerCount = 10 + random.nextInt(41);
 
           doc = await _db.collection('match_tournaments').add({
             'status': 'waiting',
             'players': [_uid],
-            'playerCount': randomStartCount, // CHANGED: Random instead of 1
+            'playerCount': _startingPlayerCount + 1,
+            'realPlayers': [_uid],
+            'realPlayerCount': 1,
             'maxPlayers': TOURNAMENT_SIZE,
             'createdAt': FieldValue.serverTimestamp(),
+            'gameType': 'match_madness',
             'bots': <String, dynamic>{},
           });
           _tournamentCreatedTime = DateTime.now();
           if (mounted) {
             setState(() {
               _tourneyId = doc.id;
-              _actualPlayerCount = randomStartCount; // CHANGED: Use random count
-              _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
+              _actualPlayerCount = _startingPlayerCount + 1;
+              _displayedPlayerCount = _startingPlayerCount + 1;
+              _realPlayerCount = 1;
             });
           }
-          _startAutoFillTimer();
+          _startRealisticTournamentFill();
           return;
         }
 
+        // Join existing tournament
         await doc.update({
           'players': FieldValue.arrayUnion([_uid]),
           'playerCount': FieldValue.increment(1),
+          'realPlayers': FieldValue.arrayUnion([_uid]),
+          'realPlayerCount': FieldValue.increment(1),
         });
 
-        if (tourneyData.containsKey('createdAt') && tourneyData['createdAt'] != null) {
-          final timestamp = tourneyData['createdAt'] as Timestamp;
+        if (tournamentData.containsKey('createdAt') && tournamentData['createdAt'] != null) {
+          final timestamp = tournamentData['createdAt'] as Timestamp;
           _tournamentCreatedTime = timestamp.toDate();
         } else {
           _tournamentCreatedTime = DateTime.now();
         }
 
-        print('Match Joined tournament ${doc.id} with ${currentCount + 1} players');
+        print('Match Joined tournament ${doc.id} with ${totalPlayerCount + 1} total players (${realPlayerCount + 1} real)');
 
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = currentCount + 1;
-            _displayedPlayerCount = currentCount + 1;
+            _actualPlayerCount = totalPlayerCount + 1;
+            _displayedPlayerCount = totalPlayerCount + 1;
+            _realPlayerCount = realPlayerCount + 1;
           });
         }
 
-        _startAutoFillTimer();
+        _startRealisticTournamentFill();
       }
     } catch (e) {
       print('Match Error joining/creating match tournament: $e');
       try {
-        // RANDOM STARTING PLAYER COUNT for fallback case
+        // Fallback
         final random = math.Random();
-        final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1;
+        _startingPlayerCount = 10 + random.nextInt(41);
 
         final doc = await _db.collection('match_tournaments').add({
           'status': 'waiting',
           'players': [_uid],
-          'playerCount': randomStartCount, // CHANGED: Random instead of 1
+          'playerCount': _startingPlayerCount + 1,
+          'realPlayers': [_uid],
+          'realPlayerCount': 1,
           'maxPlayers': TOURNAMENT_SIZE,
           'createdAt': FieldValue.serverTimestamp(),
+          'gameType': 'match_madness',
           'bots': <String, dynamic>{},
         });
         _tournamentCreatedTime = DateTime.now();
-        print('Match Created fallback tournament: ${doc.id} with $randomStartCount players');
+        print('Match Created fallback tournament: ${doc.id} with ${_startingPlayerCount + 1} players');
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = randomStartCount; // CHANGED: Use random count
-            _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
+            _actualPlayerCount = _startingPlayerCount + 1;
+            _displayedPlayerCount = _startingPlayerCount + 1;
+            _realPlayerCount = 1;
           });
         }
-        _startAutoFillTimer();
+        _startRealisticTournamentFill();
       } catch (e2) {
         print('Match Failed to create fallback tournament: $e2');
       }
     }
   }
 
-  void _startAutoFillTimer() {
+  // REALISTIC: Simulate tournament filling up naturally
+  void _startRealisticTournamentFill() {
     if (_tournamentCreatedTime == null) return;
 
-    print('Match Starting auto-fill timer for match tournament $_tourneyId (max $TOURNAMENT_SIZE)');
+    print('Match Starting realistic tournament fill simulation');
+    _isFilling = true;
 
-    _fillTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      print('Match Checking if bots needed...');
-      _checkAndAddBots();
+    // Gradual counter increase to 64
+    _fillTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
+      if (_displayedPlayerCount < TOURNAMENT_SIZE) {
+        setState(() {
+          final remaining = TOURNAMENT_SIZE - _displayedPlayerCount;
+          // Faster increase as we get closer to full
+          final increment = remaining > 30 ? math.Random().nextInt(3) + 1 :
+          remaining > 10 ? math.Random().nextInt(2) + 1 : 1;
+          _displayedPlayerCount = math.min(_displayedPlayerCount + increment, TOURNAMENT_SIZE);
+        });
+      }
+
+      if (_displayedPlayerCount >= TOURNAMENT_SIZE) {
+        timer.cancel();
+        _fillComplete();
+      }
     });
 
-    _startGradualDisplay();
+    // Backup timer in case we need to force completion
+    Timer(const Duration(seconds: 15), () {
+      if (_displayedPlayerCount < TOURNAMENT_SIZE) {
+        setState(() {
+          _displayedPlayerCount = TOURNAMENT_SIZE;
+        });
+        _fillComplete();
+      }
+    });
+  }
 
-    Timer(const Duration(seconds: 20), () {
-      print('Match 20 seconds reached - force starting tournament');
-      _forceStartTournament();
+  // When tournament is full, add bots silently and show ad
+  Future<void> _fillComplete() async {
+    if (_tourneyId == null) return;
+
+    try {
+      _isFilling = false;
+
+      // Silently add bots to match the displayed count
+      final tournamentDoc = await _db.collection('match_tournaments').doc(_tourneyId!).get();
+      final data = tournamentDoc.data();
+      if (data == null) return;
+
+      final currentTotalCount = data['playerCount'] as int? ?? 0;
+
+      // Add bots to reach exactly 64 (silently, no mention of bots)
+      if (currentTotalCount < TOURNAMENT_SIZE) {
+        final botsNeeded = TOURNAMENT_SIZE - currentTotalCount;
+        print('Match Silently adding $botsNeeded participants to reach $TOURNAMENT_SIZE total');
+
+        final newBots = await MatchBotService.addBotsToTournament(_tourneyId!, botsNeeded);
+        _tournamentBots.addAll(newBots);
+
+        if (mounted) {
+          setState(() {
+            _actualPlayerCount = TOURNAMENT_SIZE;
+          });
+        }
+      }
+
+      // Show ad countdown
+      await _showAdCountdown();
+
+      // Start the tournament
+      await _startTournament();
+
+    } catch (e) {
+      print('Match Error completing tournament fill: $e');
+    }
+  }
+
+  Future<void> _showAdCountdown() async {
+    print('Match Starting 15-second ad countdown');
+
+    if (mounted) {
+      setState(() {
+        _isShowingAd = true;
+        _adCountdown = 15;
+      });
+    }
+
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _adCountdown--;
+        });
+      }
+
+      if (_adCountdown <= 0) {
+        timer.cancel();
+        if (mounted) {
+          setState(() {
+            _isShowingAd = false;
+          });
+        }
+      }
+    });
+
+    await Future.delayed(const Duration(seconds: 15));
+  }
+
+  Future<void> _startTournament() async {
+    if (_tourneyId == null) return;
+
+    print('Match Starting tournament with 64 participants');
+
+    await _db.collection('match_tournaments').doc(_tourneyId!).update({
+      'status': 'active',
+      'startedAt': FieldValue.serverTimestamp(),
+      'finalPlayerCount': TOURNAMENT_SIZE,
     });
   }
 
@@ -399,21 +522,13 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
         final status = tournamentData['status'] as String? ?? 'waiting';
         final count = tournamentData['playerCount'] as int? ?? 0;
 
-        print('Match Tournament status: $status, count: $count/$TOURNAMENT_SIZE');
-
-        if (_actualPlayerCount != count) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              setState(() {
-                _actualPlayerCount = math.min(count, TOURNAMENT_SIZE);
-              });
-            }
-          });
-        }
+        print('Match Tournament status: $status, displayed players: $_displayedPlayerCount/$TOURNAMENT_SIZE');
 
         switch (status) {
           case 'waiting':
-            print('Match Status is waiting, showing waiting screen with $_displayedPlayerCount players');
+            if (_isShowingAd || _adCountdown > 0) {
+              return _buildAdCountdownScreen();
+            }
             return _buildWaitingScreen(math.min(_displayedPlayerCount, TOURNAMENT_SIZE));
 
           case 'active':
@@ -597,7 +712,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                               transform: GradientRotation(_primaryController.value * 2.0),
                             ).createShader(bounds),
                             child: Text(
-                              'LOADING MATCH TOURNAMENT',
+                              'JOINING TOURNAMENT',
                               style: GoogleFonts.creepster(
                                 fontSize: 24,
                                 color: Colors.white,
@@ -654,6 +769,32 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                       },
                     ),
                   ],
+                ),
+              ),
+              Positioned(
+                top: 40,
+                left: 20,
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withOpacity(0.3),
+                        Colors.white.withOpacity(0.1),
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 10,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                    onPressed: () => Navigator.pop(context),
+                  ),
                 ),
               ),
             ],
@@ -744,17 +885,27 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                                 transform: GradientRotation(_primaryController.value * 1.5),
                               ).createShader(bounds),
                               child: Text(
-                                'MATCH TOURNAMENT LOBBY',
+                                'MATCH TOURNAMENT',
                                 style: GoogleFonts.creepster(
-                                  fontSize: 28,
+                                  fontSize: 36,
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  letterSpacing: 2.0,
+                                  letterSpacing: 3.0,
                                   shadows: [
                                     Shadow(
-                                      color: Colors.black.withOpacity(0.8),
-                                      blurRadius: 10,
-                                      offset: const Offset(3, 3),
+                                      color: Colors.black.withOpacity(0.9),
+                                      blurRadius: 15,
+                                      offset: const Offset(4, 4),
+                                    ),
+                                    Shadow(
+                                      color: Colors.purple.withOpacity(0.8),
+                                      blurRadius: 25,
+                                      offset: const Offset(-3, -3),
+                                    ),
+                                    Shadow(
+                                      color: Colors.cyan.withOpacity(0.6),
+                                      blurRadius: 35,
+                                      offset: const Offset(0, 0),
                                     ),
                                   ],
                                 ),
@@ -764,36 +915,49 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                         },
                       ),
 
-                      const SizedBox(height: 40),
+                      const SizedBox(height: 50),
 
-                      // OPTIMIZED: Simpler counter with less intense effects
+                      // PLAYER COUNTER - Now shows all players as "CARD READERS"
                       AnimatedBuilder(
                         animation: _pulsController,
                         builder: (context, child) {
-                          final scale = 1.0 + (_pulsController.value * 0.2);
-                          final glowIntensity = 0.5 + (_pulsController.value * 0.3);
+                          final scale = 1.0 + (_pulsController.value * 0.4);
+                          final glowIntensity = 0.6 + (_pulsController.value * 0.6);
 
                           return Transform.scale(
                             scale: scale,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+                              padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 25),
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(30),
+                                borderRadius: BorderRadius.circular(35),
                                 gradient: RadialGradient(
                                   colors: [
-                                    interpolatedColors[0].withOpacity(0.8),
-                                    interpolatedColors[2].withOpacity(0.6),
+                                    interpolatedColors[0].withOpacity(0.95),
+                                    interpolatedColors[2].withOpacity(0.85),
+                                    interpolatedColors[4 % interpolatedColors.length].withOpacity(0.75),
+                                    interpolatedColors[1].withOpacity(0.65),
                                   ],
+                                  stops: [0.0, 0.3, 0.6, 1.0],
                                 ),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.7),
-                                  width: 2,
+                                  color: Colors.white.withOpacity(0.8),
+                                  width: 3,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.white.withOpacity(glowIntensity * 0.6),
-                                    blurRadius: 20,
-                                    spreadRadius: 4,
+                                    color: Colors.white.withOpacity(glowIntensity),
+                                    blurRadius: 35,
+                                    spreadRadius: 8,
+                                  ),
+                                  BoxShadow(
+                                    color: interpolatedColors[1].withOpacity(0.8),
+                                    blurRadius: 50,
+                                    spreadRadius: 5,
+                                  ),
+                                  BoxShadow(
+                                    color: interpolatedColors[3 % interpolatedColors.length].withOpacity(0.6),
+                                    blurRadius: 70,
+                                    spreadRadius: 3,
                                   ),
                                 ],
                               ),
@@ -805,36 +969,52 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                                         Colors.white,
                                         Colors.yellow,
                                         Colors.orange,
+                                        Colors.red,
                                       ],
                                     ).createShader(bounds),
                                     child: Text(
                                       '$cappedCount',
                                       style: GoogleFonts.chicle(
-                                        fontSize: 60,
+                                        fontSize: 72,
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
                                         shadows: [
                                           Shadow(
-                                            color: Colors.black.withOpacity(0.8),
-                                            blurRadius: 8,
-                                            offset: const Offset(3, 3),
+                                            color: Colors.black.withOpacity(0.9),
+                                            blurRadius: 12,
+                                            offset: const Offset(4, 4),
                                           ),
                                         ],
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 10),
                                   Text(
-                                    '$cappedCount/$TOURNAMENT_SIZE JOINED',
+                                    '$cappedCount/$TOURNAMENT_SIZE CARD READERS',
                                     style: GoogleFonts.chicle(
-                                      fontSize: 18,
-                                      color: Colors.white.withOpacity(0.9),
+                                      fontSize: 22,
+                                      color: Colors.white.withOpacity(0.95),
                                       fontWeight: FontWeight.bold,
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black.withOpacity(0.8),
+                                          blurRadius: 6,
+                                          offset: const Offset(2, 2),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    _isFilling ? 'Tournament filling up...' : 'Waiting for tournament to fill...',
+                                    style: GoogleFonts.chicle(
+                                      fontSize: 16,
+                                      color: Colors.white.withOpacity(0.8),
                                       shadows: [
                                         Shadow(
                                           color: Colors.black.withOpacity(0.7),
                                           blurRadius: 4,
-                                          offset: const Offset(2, 2),
+                                          offset: const Offset(1, 1),
                                         ),
                                       ],
                                     ),
@@ -848,94 +1028,206 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
 
                       const SizedBox(height: 40),
 
-                      // OPTIMIZED: Simpler loading indicator
-                      AnimatedBuilder(
-                        animation: _primaryController,
-                        builder: (context, child) {
-                          return Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(5, (index) {
-                              final delay = index * 0.2;
-                              final rotationOffset = (_primaryController.value + delay) % 1.0;
-                              final scale = 0.6 + (math.sin(rotationOffset * 2 * math.pi) + 1) / 2 * 0.6;
-
-                              return Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 4),
-                                child: Transform.scale(
-                                  scale: scale,
-                                  child: Container(
-                                    width: 12,
-                                    height: 12,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      gradient: RadialGradient(
-                                        colors: [
-                                          interpolatedColors[index % interpolatedColors.length].withOpacity(0.8),
-                                          interpolatedColors[index % interpolatedColors.length].withOpacity(0.4),
-                                        ],
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: interpolatedColors[index % interpolatedColors.length].withOpacity(0.5),
-                                          blurRadius: 8,
-                                          spreadRadius: 2,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }),
-                          );
-                        },
-                      ),
-
-                      const SizedBox(height: 25),
-
-                      // OPTIMIZED: Simpler status text
-                      AnimatedBuilder(
-                        animation: _pulsController,
-                        builder: (context, child) {
-                          final textOpacity = 0.7 + (_pulsController.value * 0.2);
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.black.withOpacity(0.3),
-                                  Colors.purple.withOpacity(0.2),
-                                  Colors.black.withOpacity(0.3),
-                                ],
-                              ),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.2),
-                                width: 1,
-                              ),
-                            ),
-                            child: Text(
-                              'Players joining tournament...',
+                      // GAME INFO
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 30),
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(25),
+                          gradient: RadialGradient(
+                            colors: interpolatedColors.map((c) => c.withOpacity(0.3)).toList(),
+                            center: Alignment.center,
+                            radius: 1.0,
+                          ),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.4),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Last Card Reader Standing',
                               style: GoogleFonts.chicle(
-                                fontSize: 16,
-                                color: Colors.white.withOpacity(textOpacity),
+                                fontSize: 20,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
                                 shadows: [
                                   Shadow(
-                                    color: Colors.purple.withOpacity(0.6),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 0),
+                                    color: Colors.black.withOpacity(0.8),
+                                    blurRadius: 4,
+                                    offset: const Offset(2, 2),
                                   ),
                                 ],
                               ),
                               textAlign: TextAlign.center,
                             ),
-                          );
-                        },
+                            const SizedBox(height: 10),
+                            Text(
+                              '🔮 64-player tarot elimination tournament\n'
+                                  '🃏 Match the mystical card combinations\n'
+                                  '✨ Read the cards before time runs out\n'
+                                  '💀 Fail a reading and you\'re banished!\n'
+                                  '🏆 Last reader standing wins the magic',
+                              style: GoogleFonts.chicle(
+                                fontSize: 14,
+                                color: Colors.white.withOpacity(0.9),
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black.withOpacity(0.7),
+                                    blurRadius: 3,
+                                    offset: const Offset(1, 1),
+                                  ),
+                                ],
+                              ),
+                              textAlign: TextAlign.left,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
+              Positioned(
+                top: 40,
+                left: 20,
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withOpacity(0.3),
+                        Colors.white.withOpacity(0.1),
+                      ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 10,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ),
             ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAdCountdownScreen() {
+    return Scaffold(
+      body: AnimatedBuilder(
+        animation: _primaryController,
+        builder: (context, child) {
+          final t = _primaryController.value;
+          final interpolatedColors = <Color>[];
+
+          for (int i = 0; i < _currentColors.length; i++) {
+            interpolatedColors.add(
+                Color.lerp(_currentColors[i], _nextColors[i], t) ?? _currentColors[i]
+            );
+          }
+
+          return Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                colors: interpolatedColors,
+                center: Alignment.center,
+                radius: 2.0,
+                stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+              ),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 300,
+                    height: 250,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.purple.withOpacity(0.9),
+                          Colors.pink.withOpacity(0.8),
+                          Colors.cyan.withOpacity(0.7),
+                        ],
+                      ),
+                      border: Border.all(color: Colors.white.withOpacity(0.6), width: 3),
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.play_circle_outline, size: 60, color: Colors.white),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Advertisement',
+                            style: GoogleFonts.chicle(
+                              fontSize: 24,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  AnimatedBuilder(
+                    animation: _pulsController,
+                    builder: (context, child) {
+                      final scale = 1.0 + (_pulsController.value * 0.2);
+                      return Transform.scale(
+                        scale: scale,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.orange.withOpacity(0.9),
+                                Colors.red.withOpacity(0.7),
+                              ],
+                            ),
+                            border: Border.all(color: Colors.white.withOpacity(0.8), width: 2),
+                          ),
+                          child: Text(
+                            'Tournament starts in $_adCountdown seconds...',
+                            style: GoogleFonts.creepster(
+                              fontSize: 20,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  Text(
+                    '64 card readers ready for the tarot challenge!',
+                    style: GoogleFonts.chicle(
+                      fontSize: 16,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
           );
         },
       ),
@@ -975,7 +1267,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                         Colors.transparent,
                         interpolatedColors[1].withOpacity(0.3),
                         Colors.transparent,
-                        interpolatedColors[3].withOpacity(0.2),
+                        interpolatedColors[3 % interpolatedColors.length].withOpacity(0.2),
                         Colors.transparent,
                       ],
                       begin: Alignment.topLeft,
@@ -993,7 +1285,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                     AnimatedBuilder(
                       animation: _pulsController,
                       builder: (context, child) {
-                        final scale = 1.0 + (_pulsController.value * 0.3);
+                        final scale = 1.0 + (_pulsController.value * 0.4);
                         return Transform.scale(
                           scale: scale,
                           child: Container(
@@ -1009,22 +1301,22 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.white.withOpacity(0.5),
-                                  blurRadius: 20,
-                                  spreadRadius: 5,
+                                  color: Colors.white.withOpacity(0.6),
+                                  blurRadius: 30,
+                                  spreadRadius: 10,
                                 ),
                               ],
                             ),
                             child: const Icon(
                               Icons.style,
-                              size: 80,
+                              size: 100,
                               color: Colors.white,
                             ),
                           ),
                         );
                       },
                     ),
-                    const SizedBox(height: 25),
+                    const SizedBox(height: 30),
                     ShaderMask(
                       shaderCallback: (bounds) => LinearGradient(
                         colors: [
@@ -1035,32 +1327,32 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                         ],
                       ).createShader(bounds),
                       child: Text(
-                        'MATCH MADNESS BEGINS!',
+                        'ENTERING THE TOURNAMENT!',
                         style: GoogleFonts.creepster(
-                          fontSize: 32,
+                          fontSize: 40,
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
-                          letterSpacing: 2.0,
+                          letterSpacing: 3.0,
                           shadows: [
                             Shadow(
-                              color: Colors.black.withOpacity(0.8),
-                              blurRadius: 10,
-                              offset: const Offset(3, 3),
+                              color: Colors.black.withOpacity(0.9),
+                              blurRadius: 15,
+                              offset: const Offset(4, 4),
                             ),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 15),
+                    const SizedBox(height: 20),
                     Text(
-                      'Prepare for the tarot tournament...',
+                      'The 64-player tarot tournament begins...',
                       style: GoogleFonts.chicle(
-                        fontSize: 18,
+                        fontSize: 20,
                         color: Colors.white.withOpacity(0.9),
                         shadows: [
                           Shadow(
-                            color: Colors.black.withOpacity(0.6),
-                            blurRadius: 4,
+                            color: Colors.black.withOpacity(0.7),
+                            blurRadius: 6,
                             offset: const Offset(2, 2),
                           ),
                         ],

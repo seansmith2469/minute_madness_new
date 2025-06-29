@@ -1,4 +1,4 @@
-// lib/screens/precision_tap_screen.dart - ULTIMATE TOURNAMENT 3-ROUND FORMAT
+// lib/screens/precision_tap_screen.dart - FIXED VERSION
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -7,8 +7,9 @@ import '../models/match_result.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart' show gif3s, targetDurations;
-import 'tournament_results_screen.dart';
+import '../config/gradient_config.dart';
 import '../services/bot_service.dart';
+import 'tournament_results_screen.dart';
 
 class PrecisionTapScreen extends StatefulWidget {
   final Duration target;
@@ -39,7 +40,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
   bool _timedOut = false;
 
   Timer? _countdownTimer;
-  int _remainingSeconds = 10; // For regular tournament
+  int _remainingSeconds = 20; // 20 seconds after ready is clicked (HIDDEN FROM USER)
 
   // ULTIMATE TOURNAMENT VARIABLES
   bool _isUltimateTournament = false;
@@ -78,6 +79,12 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
   bool _isPerfectHit = false;
   bool _showPerfectEffect = false;
 
+  // ADDED: Ready screen states
+  bool _showReadyScreen = true;
+  bool _hasClickedReady = false;
+
+// Replace the initState() method in your precision_tap_screen.dart with this:
+
   @override
   void initState() {
     super.initState();
@@ -85,9 +92,12 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
     // Check if this is Ultimate Tournament
     _isUltimateTournament = widget.onUltimateComplete != null;
 
-    // Initialize INTENSE psychedelic controllers
-    _currentColors = _generateGradient();
-    _nextColors = _generateGradient();
+    // FIXED: Only show instructions for Ultimate Tournament
+    _showInstructions = _isUltimateTournament; // Changed from true to conditional
+
+    // Initialize INTENSE psychedelic controllers using gradient config
+    _currentColors = PsychedelicGradient.generateStableGradient(6);
+    _nextColors = PsychedelicGradient.generateGradient(6);
 
     _backgroundController = AnimationController(
       vsync: this,
@@ -95,7 +105,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
     )..addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _currentColors = List.from(_nextColors);
-        _nextColors = _generateGradient();
+        _nextColors = PsychedelicGradient.generateGradient(6);
         _backgroundController.forward(from: 0);
       }
     })..forward();
@@ -152,6 +162,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
     // Ultimate Tournament: Show instructions initially
     if (_isUltimateTournament) {
       _showInstructions = true;
+      _showReadyScreen = false; // Ultimate mode has its own instructions
       // Auto-hide instructions after 4 seconds
       Timer(const Duration(seconds: 4), () {
         if (mounted) {
@@ -159,11 +170,107 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
         }
       });
     } else {
-      // Regular tournament: Start countdown and submit bots
+      // Regular tournament: Show ready screen first
       if (!_isPracticeMode) {
-        _startHiddenCountdown();
-        _submitBotResultsForRound();
+        // For rounds 2-6, submit bot results
+        if (widget.round > 1) {
+          print('🤖 Round ${widget.round} starting - submitting bot results...');
+          Future.delayed(const Duration(milliseconds: 500), () {
+            _submitBotResultsForCurrentRound();
+          });
+        }
+        _checkIfBotsSubmitted();
+      } else {
+        // Practice mode: skip ready screen
+        _showReadyScreen = false;
+        _hasClickedReady = true;
       }
+    }
+  }
+
+  // ADDED: Submit bot results for current round
+  Future<void> _submitBotResultsForCurrentRound() async {
+    if (_isPracticeMode || _isUltimateTournament) return;
+
+    try {
+      print('🤖 Submitting bot results for round ${widget.round}...');
+
+      // Get tournament data
+      final tourneyDoc = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(widget.tourneyId)
+          .get();
+
+      if (!tourneyDoc.exists) {
+        print('❌ Tournament not found');
+        return;
+      }
+
+      final tourneyData = tourneyDoc.data()!;
+      final players = List<String>.from(tourneyData['players'] ?? []);
+      final botsData = tourneyData['bots'] as Map<String, dynamic>? ?? {};
+
+      // Find which bots are still in the tournament
+      final botsInRound = <BotPlayer>[];
+      for (final playerId in players) {
+        if (botsData.containsKey(playerId)) {
+          final botData = botsData[playerId] as Map<String, dynamic>;
+          final bot = BotPlayer(
+            id: playerId,
+            name: botData['name'] as String,
+            difficulty: BotDifficulty.values.firstWhere(
+                  (d) => d.name == botData['difficulty'],
+            ),
+          );
+          botsInRound.add(bot);
+        }
+      }
+
+      if (botsInRound.isEmpty) {
+        print('✅ No bots in round ${widget.round}');
+        return;
+      }
+
+      print('🤖 Submitting results for ${botsInRound.length} bots...');
+      await BotService.submitBotResults(
+          widget.tourneyId,
+          widget.round,
+          botsInRound,
+          widget.target
+      );
+      print('✅ Bot results submitted for round ${widget.round}');
+
+    } catch (e) {
+      print('❌ Error submitting bot results: $e');
+    }
+  }
+
+  // FIXED: Check if bots are already submitted instead of submitting them
+  Future<void> _checkIfBotsSubmitted() async {
+    try {
+      final tourneyDoc = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(widget.tourneyId)
+          .get();
+
+      if (!tourneyDoc.exists) {
+        print('❌ Tournament document not found');
+        return;
+      }
+
+      final data = tourneyDoc.data();
+      final botsSubmitted = data?['botsSubmitted'] as bool? ?? false;
+
+      if (botsSubmitted) {
+        print('✅ Bots already submitted in lobby - skipping duplicate submission');
+      } else {
+        print('⚠️ Bots not yet submitted - submitting now as fallback');
+        await _submitBotResultsForRound();
+      }
+    } catch (e) {
+      print('❌ Error checking bot submission status: $e');
+      // Fallback: try to submit bots
+      await _submitBotResultsForRound();
     }
   }
 
@@ -247,29 +354,6 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
     });
   }
 
-  List<Color> _generateGradient() {
-    final random = math.Random();
-    final ultraVibrantColors = [
-      Colors.red.shade900,
-      Colors.orange.shade800,
-      Colors.yellow.shade600,
-      Colors.green.shade700,
-      Colors.blue.shade800,
-      Colors.indigo.shade700,
-      Colors.purple.shade800,
-      Colors.pink.shade700,
-      Colors.cyan.shade600,
-      Colors.lime.shade700,
-      Colors.deepOrange.shade800,
-      Colors.deepPurple.shade800,
-      Colors.teal.shade700,
-      Colors.amber.shade700,
-    ];
-
-    return List.generate(
-        8, (_) => ultraVibrantColors[random.nextInt(ultraVibrantColors.length)]);
-  }
-
   Future<void> _submitBotResultsForRound() async {
     try {
       final tourneyDoc = await FirebaseFirestore.instance
@@ -314,7 +398,9 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
       }
 
       if (allBots.isNotEmpty) {
-        BotService.submitBotResults(widget.tourneyId, widget.round, allBots, widget.target);
+        print('🤖 Fallback: Submitting results for ${allBots.length} bots...');
+        await BotService.submitBotResults(widget.tourneyId, widget.round, allBots, widget.target);
+        print('✅ Fallback bot submission complete');
       }
     } catch (e) {
       print('Error submitting bot results: $e');
@@ -337,6 +423,19 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
         }
       }
     });
+  }
+
+  // ADDED: Handle ready button click
+  void _handleReadyClick() {
+    setState(() {
+      _hasClickedReady = true;
+      _showReadyScreen = false;
+    });
+
+    // Start the hidden countdown timer after ready is clicked
+    if (!_isPracticeMode && !_isUltimateTournament) {
+      _startHiddenCountdown();
+    }
   }
 
   void _handleTimeout() {
@@ -526,13 +625,22 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
 
   @override
   Widget build(BuildContext context) {
+      print('🔴 PRECISION TAP BUILD');
+      print('🔴 showReadyScreen: $_showReadyScreen');
+      print('🔴 hasClickedReady: $_hasClickedReady');
+      print('🔴 isPracticeMode: $_isPracticeMode');
+      print('🔴 isUltimateTournament: $_isUltimateTournament');
+      print('🔴 showButton: $_showButton');
+      print('🔴 showInstructions: $_showInstructions');
+      print('🔴 timedOut: $_timedOut');
+      print('🔴 gameComplete: $_gameComplete');
     return Scaffold(
       body: AnimatedBuilder(
         animation: _backgroundController,
         builder: (context, child) {
           final t = _backgroundController.value;
+          // Ensure we always have exactly 6 colors for interpolation
           final interpolatedColors = <Color>[];
-
           for (int i = 0; i < _currentColors.length; i++) {
             interpolatedColors.add(
                 Color.lerp(_currentColors[i], _nextColors[i], t) ?? _currentColors[i]
@@ -542,19 +650,17 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
           return Stack(
             fit: StackFit.expand,
             children: [
-              // PSYCHEDELIC BACKGROUND
+              // PSYCHEDELIC BACKGROUND - Base layer
               Container(
                 decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: interpolatedColors,
-                    center: Alignment.center,
+                  gradient: PsychedelicGradient.getRadialGradient(
+                    interpolatedColors,
                     radius: _isRunning ? 2.0 : 1.0,
-                    stops: [0.0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.85, 1.0],
                   ),
                 ),
               ),
 
-              // ROTATING OVERLAY
+              // SUBTLE ROTATING OVERLAY - Reduced opacity
               AnimatedBuilder(
                 animation: _rotationController,
                 builder: (context, child) {
@@ -563,9 +669,9 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                       gradient: LinearGradient(
                         colors: [
                           Colors.transparent,
-                          interpolatedColors[2].withOpacity(0.4),
+                          interpolatedColors[1].withOpacity(0.2), // Reduced from 0.6
                           Colors.transparent,
-                          interpolatedColors[5].withOpacity(0.3),
+                          interpolatedColors[3].withOpacity(0.15), // Reduced from 0.4
                           Colors.transparent,
                         ],
                         begin: Alignment.topLeft,
@@ -577,11 +683,11 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                 },
               ),
 
-              // PULSING OVERLAY
+              // PULSING OVERLAY - Reduced opacity
               AnimatedBuilder(
                 animation: _pulsController,
                 builder: (context, child) {
-                  final intensity = _isRunning ? 0.6 : 0.3;
+                  final intensity = _isRunning ? 0.3 : 0.15; // Reduced from 0.6/0.3
                   return Container(
                     decoration: BoxDecoration(
                       gradient: RadialGradient(
@@ -644,431 +750,573 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                   },
                 ),
 
-              // ULTIMATE TOURNAMENT INSTRUCTIONS OVERLAY
-              if (_isUltimateTournament && _showInstructions)
-                AnimatedBuilder(
-                  animation: _instructionController,
-                  builder: (context, child) {
-                    final fade = _instructionController.value;
-                    return Container(
-                      color: Colors.black.withOpacity(0.8 * (1 - fade)),
-                      child: Center(
-                        child: Transform.scale(
-                          scale: 1.0 - (fade * 0.3),
-                          child: Container(
-                            margin: const EdgeInsets.all(20),
-                            padding: const EdgeInsets.all(30),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(25),
-                              gradient: RadialGradient(
-                                colors: [
-                                  Colors.purple.withOpacity(0.9),
-                                  Colors.blue.withOpacity(0.7),
-                                  Colors.cyan.withOpacity(0.5),
-                                ],
-                              ),
-                              border: Border.all(color: Colors.white, width: 3),
-                            ),
+              // MAIN GAME CONTENT - Above all gradient layers
+              Positioned.fill(
+                child: SafeArea(
+                  child: Stack(
+                    children: [
+                      // READY SCREEN (for regular tournament)
+                      if (!_isUltimateTournament && _showReadyScreen && !_isPracticeMode)
+                        Container(
+                          color: Colors.black.withOpacity(0.7),
+                          child: Center(
                             child: Column(
-                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Text(
-                                  '⚡ MINUTE MADNESS ⚡',
-                                  style: GoogleFonts.creepster(
-                                    fontSize: 32,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 20),
-                                Text(
-                                  '🎯 Complete 3 rounds\n'
-                                      '⏱️ 30 seconds total time\n'
-                                      '🏆 Lowest total error wins\n'
-                                      '🎮 Stop timer at exactly 3 seconds',
-                                  style: GoogleFonts.chicle(
-                                    fontSize: 18,
-                                    color: Colors.white,
-                                    height: 1.5,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 20),
                                 Container(
-                                  padding: const EdgeInsets.all(15),
+                                  padding: const EdgeInsets.all(30),
                                   decoration: BoxDecoration(
-                                    color: Colors.orange.withOpacity(0.8),
-                                    borderRadius: BorderRadius.circular(15),
-                                  ),
-                                  child: Text(
-                                    'Starting in a few seconds...',
-                                    style: GoogleFonts.chicle(
-                                      fontSize: 16,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
+                                    borderRadius: BorderRadius.circular(25),
+                                    gradient: RadialGradient(
+                                      colors: [
+                                        Colors.orange.withOpacity(0.9),
+                                        Colors.red.withOpacity(0.7),
+                                        Colors.yellow.withOpacity(0.5),
+                                      ],
                                     ),
+                                    border: Border.all(color: Colors.white, width: 3),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.orange.withOpacity(0.5),
+                                        blurRadius: 30,
+                                        spreadRadius: 10,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '🎯 PRECISION TAP 🎯',
+                                        style: GoogleFonts.creepster(
+                                          fontSize: 32,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      Text(
+                                        'Round ${widget.round}',
+                                        style: GoogleFonts.chicle(
+                                          fontSize: 24,
+                                          color: Colors.white.withOpacity(0.9),
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 30),
+                                      Container(
+                                        padding: const EdgeInsets.all(20),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.3),
+                                          borderRadius: BorderRadius.circular(15),
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            const Icon(
+                                              Icons.info_outline,
+                                              color: Colors.white,
+                                              size: 30,
+                                            ),
+                                            const SizedBox(height: 15),
+                                            Text(
+                                              'HOW TO PLAY:',
+                                              style: GoogleFonts.chicle(
+                                                fontSize: 20,
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 10),
+                                            Text(
+                                              '1. Click READY to begin\n'
+                                                  '2. Click START to start the timer\n'
+                                                  '3. Click STOP at exactly 3 seconds\n'
+                                                  '4. Get as close as possible!',
+                                              style: GoogleFonts.chicle(
+                                                fontSize: 16,
+                                                color: Colors.white.withOpacity(0.9),
+                                                height: 1.5,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            // REMOVED: No countdown display
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 30),
+                                      AnimatedBuilder(
+                                        animation: _pulsController,
+                                        builder: (context, child) {
+                                          final scale = 1.0 + (_pulsController.value * 0.1);
+                                          return Transform.scale(
+                                            scale: scale,
+                                            child: ElevatedButton(
+                                              onPressed: _handleReadyClick,
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Colors.green,
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 50,
+                                                  vertical: 20,
+                                                ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(30),
+                                                ),
+                                                elevation: 10,
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.play_arrow,
+                                                    size: 30,
+                                                    color: Colors.white,
+                                                  ),
+                                                  const SizedBox(width: 10),
+                                                  Text(
+                                                    'READY!',
+                                                    style: GoogleFonts.creepster(
+                                                      fontSize: 24,
+                                                      color: Colors.white,
+                                                      fontWeight: FontWeight.bold,
+                                                      letterSpacing: 2.0,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                ),
 
-              // MAIN CONTENT
-              Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // ULTIMATE TOURNAMENT HEADER
-                    if (_isUltimateTournament && !_showInstructions) ...[
-                      AnimatedBuilder(
-                        animation: _scaleController,
-                        builder: (context, child) {
-                          final scale = 1.0 + (_scaleController.value * 0.05);
-                          final timeColor = _ultimateTimeLeft <= 10 ? Colors.red :
-                          _ultimateTimeLeft <= 20 ? Colors.orange : Colors.green;
-
-                          return Transform.scale(
-                            scale: scale,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                gradient: LinearGradient(
-                                  colors: [
-                                    timeColor.withOpacity(0.8),
-                                    timeColor.withOpacity(0.6),
-                                  ],
-                                ),
-                                border: Border.all(color: Colors.white, width: 2),
-                              ),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    'Round $_currentRound/3 | Time: ${_ultimateTimeLeft}s',
-                                    style: GoogleFonts.chicle(
-                                      fontSize: 18,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  if (_roundErrors.isNotEmpty)
-                                    Text(
-                                      'Errors: ${_roundErrors.join(', ')}ms',
-                                      style: GoogleFonts.chicle(
-                                        fontSize: 14,
-                                        color: Colors.white.withOpacity(0.9),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-
-                    // PERFECT HIT TEXT EFFECT
-                    if (_showPerfectEffect)
-                      AnimatedBuilder(
-                        animation: _perfectController,
-                        builder: (context, child) {
-                          final bounce = math.sin(_perfectController.value * math.pi * 4) * 0.3;
-                          final scale = 1.0 + bounce;
-                          final opacity = 1.0 - _perfectController.value;
-
-                          return Transform.scale(
-                            scale: scale,
-                            child: ShaderMask(
-                              shaderCallback: (bounds) => LinearGradient(
-                                colors: [
-                                  Colors.yellow,
-                                  Colors.orange,
-                                  Colors.red,
-                                  Colors.pink,
-                                  Colors.purple,
-                                  Colors.cyan,
-                                ],
-                              ).createShader(bounds),
-                              child: Text(
-                                '🎯 PERFECT! 🎯',
-                                style: GoogleFonts.creepster(
-                                  fontSize: 48,
-                                  color: Colors.white.withOpacity(opacity),
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 4.0,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.black.withOpacity(0.9),
-                                      blurRadius: 15,
-                                      offset: const Offset(4, 4),
-                                    ),
-                                  ],
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-
-                    // Result display
-                    if (_cachedResultText != null && !_showInstructions) ...[
-                      AnimatedBuilder(
-                        animation: _explosionController,
-                        builder: (context, child) {
-                          final scale = 1.0 + (_explosionController.value * 0.3);
-                          final colorShift = _explosionController.value;
-
-                          final gradientColors = _timedOut ? [
-                            Color.lerp(Colors.red, Colors.white, colorShift * 0.5)!.withOpacity(0.9),
-                            Color.lerp(Colors.orange, Colors.yellow, colorShift * 0.3)!.withOpacity(0.7),
-                            Colors.red.withOpacity(0.5),
-                          ] : [
-                            Color.lerp(interpolatedColors[0], Colors.white, colorShift * 0.5)!.withOpacity(0.9),
-                            Color.lerp(interpolatedColors[2], Colors.yellow, colorShift * 0.3)!.withOpacity(0.7),
-                            interpolatedColors[4].withOpacity(0.5),
-                          ];
-
-                          return Transform.scale(
-                            scale: scale,
-                            child: Container(
-                              padding: const EdgeInsets.all(25),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(25),
-                                gradient: RadialGradient(
-                                  colors: gradientColors,
-                                ),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.8),
-                                  width: 3,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.white.withOpacity(0.5),
-                                    blurRadius: 20,
-                                    spreadRadius: 5,
-                                  ),
-                                ],
-                              ),
-                              child: Text(
-                                _cachedResultText!,
-                                style: GoogleFonts.chicle(
-                                  fontSize: _timedOut ? 28 : 32,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.black.withOpacity(0.9),
-                                      blurRadius: 8,
-                                      offset: const Offset(3, 3),
-                                    ),
-                                  ],
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 40),
-                    ],
-
-                    // THE PSYCHEDELIC BUTTON
-                    if (_showButton && !_timedOut && !_showInstructions && !_gameComplete)
-                      AnimatedBuilder(
-                        animation: _buttonController,
-                        builder: (context, child) {
-                          return AnimatedBuilder(
-                            animation: _pulsController,
-                            builder: (context, child) {
-                              final buttonScale = 1.0 + (_pulsController.value * 0.1) + (_buttonController.value * 0.2);
-                              final glowIntensity = 0.5 + (_pulsController.value * 0.5);
-
-                              return Transform.scale(
-                                scale: buttonScale,
-                                child: GestureDetector(
-                                  onTap: _handleTap,
+                      // ULTIMATE TOURNAMENT INSTRUCTIONS OVERLAY
+                      if (_isUltimateTournament && _showInstructions)
+                        AnimatedBuilder(
+                          animation: _instructionController,
+                          builder: (context, child) {
+                            final fade = _instructionController.value;
+                            return Container(
+                              color: Colors.black.withOpacity(0.8 * (1 - fade)),
+                              child: Center(
+                                child: Transform.scale(
+                                  scale: 1.0 - (fade * 0.3),
                                   child: Container(
-                                    width: 250,
-                                    height: 250,
+                                    margin: const EdgeInsets.all(20),
+                                    padding: const EdgeInsets.all(30),
                                     decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
+                                      borderRadius: BorderRadius.circular(25),
                                       gradient: RadialGradient(
-                                        colors: _isRunning ? [
-                                          Colors.red.withOpacity(0.9),
-                                          Colors.orange.withOpacity(0.8),
-                                          Colors.yellow.withOpacity(0.7),
-                                          Colors.red.withOpacity(0.9),
-                                        ] : [
-                                          Colors.green.withOpacity(0.9),
-                                          Colors.lime.withOpacity(0.8),
-                                          Colors.cyan.withOpacity(0.7),
-                                          Colors.green.withOpacity(0.9),
+                                        colors: [
+                                          Colors.purple.withOpacity(0.9),
+                                          Colors.blue.withOpacity(0.7),
+                                          Colors.cyan.withOpacity(0.5),
                                         ],
-                                        stops: [0.0, 0.3, 0.7, 1.0],
                                       ),
-                                      border: Border.all(
-                                        color: Colors.white.withOpacity(0.8),
-                                        width: 4,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.white.withOpacity(glowIntensity),
-                                          blurRadius: 25,
-                                          spreadRadius: 8,
+                                      border: Border.all(color: Colors.white, width: 3),
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '⚡ MINUTE MADNESS ⚡',
+                                          style: GoogleFonts.creepster(
+                                            fontSize: 32,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
                                         ),
-                                        BoxShadow(
-                                          color: (_isRunning ? Colors.red : Colors.green).withOpacity(0.6),
-                                          blurRadius: 40,
-                                          spreadRadius: 5,
+                                        const SizedBox(height: 20),
+                                        Text(
+                                          '🎯 Complete 3 rounds\n'
+                                              '⏱️ 30 seconds total time\n'
+                                              '🏆 Lowest total error wins\n'
+                                              '🎮 Stop timer at exactly 3 seconds',
+                                          style: GoogleFonts.chicle(
+                                            fontSize: 18,
+                                            color: Colors.white,
+                                            height: 1.5,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                        const SizedBox(height: 20),
+                                        Container(
+                                          padding: const EdgeInsets.all(15),
+                                          decoration: BoxDecoration(
+                                            color: Colors.orange.withOpacity(0.8),
+                                            borderRadius: BorderRadius.circular(15),
+                                          ),
+                                          child: Text(
+                                            'Starting in a few seconds...',
+                                            style: GoogleFonts.chicle(
+                                              fontSize: 16,
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                         ),
                                       ],
                                     ),
-                                    child: Center(
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+
+                      // MAIN GAME UI
+                      if (!_showReadyScreen || _isPracticeMode || _isUltimateTournament)
+                        Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              // ULTIMATE TOURNAMENT HEADER (NO TIMER DISPLAY)
+                              if (_isUltimateTournament && !_showInstructions) ...[
+                                AnimatedBuilder(
+                                  animation: _scaleController,
+                                  builder: (context, child) {
+                                    final scale = 1.0 + (_scaleController.value * 0.05);
+
+                                    return Transform.scale(
+                                      scale: scale,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(20),
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Colors.purple.withOpacity(0.8),
+                                              Colors.blue.withOpacity(0.6),
+                                            ],
+                                          ),
+                                          border: Border.all(color: Colors.white, width: 2),
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Text(
+                                              'Round $_currentRound/3',
+                                              style: GoogleFonts.chicle(
+                                                fontSize: 18,
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            if (_roundErrors.isNotEmpty)
+                                              Text(
+                                                'Errors: ${_roundErrors.join(', ')}ms',
+                                                style: GoogleFonts.chicle(
+                                                  fontSize: 14,
+                                                  color: Colors.white.withOpacity(0.9),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 20),
+                              ],
+
+                              // PERFECT HIT TEXT EFFECT
+                              if (_showPerfectEffect)
+                                AnimatedBuilder(
+                                  animation: _perfectController,
+                                  builder: (context, child) {
+                                    final bounce = math.sin(_perfectController.value * math.pi * 4) * 0.3;
+                                    final scale = 1.0 + bounce;
+                                    final opacity = 1.0 - _perfectController.value;
+
+                                    return Transform.scale(
+                                      scale: scale,
                                       child: ShaderMask(
                                         shaderCallback: (bounds) => LinearGradient(
-                                          colors: [
-                                            Colors.white,
-                                            Colors.yellow,
-                                            Colors.white,
-                                          ],
+                                          colors: PsychedelicGradient.getPsychedelicPalette(),
                                         ).createShader(bounds),
                                         child: Text(
-                                          _isRunning ? 'STOP' : 'START',
+                                          '🎯 PERFECT! 🎯',
                                           style: GoogleFonts.creepster(
-                                            fontSize: 36,
-                                            color: Colors.white,
+                                            fontSize: 48,
+                                            color: Colors.white.withOpacity(opacity),
                                             fontWeight: FontWeight.bold,
-                                            letterSpacing: 3.0,
+                                            letterSpacing: 4.0,
                                             shadows: [
                                               Shadow(
                                                 color: Colors.black.withOpacity(0.9),
-                                                blurRadius: 10,
+                                                blurRadius: 15,
+                                                offset: const Offset(4, 4),
+                                              ),
+                                            ],
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+
+                              // Result display
+                              if (_cachedResultText != null && !_showInstructions) ...[
+                                AnimatedBuilder(
+                                  animation: _explosionController,
+                                  builder: (context, child) {
+                                    final scale = 1.0 + (_explosionController.value * 0.3);
+                                    final colorShift = _explosionController.value;
+
+                                    final gradientColors = _timedOut ? [
+                                      Color.lerp(Colors.red, Colors.white, colorShift * 0.5)!.withOpacity(0.9),
+                                      Color.lerp(Colors.orange, Colors.yellow, colorShift * 0.3)!.withOpacity(0.7),
+                                      Colors.red.withOpacity(0.5),
+                                    ] : [
+                                      Color.lerp(interpolatedColors[0], Colors.white, colorShift * 0.5)!.withOpacity(0.9),
+                                      Color.lerp(interpolatedColors[2], Colors.yellow, colorShift * 0.3)!.withOpacity(0.7),
+                                      interpolatedColors[4].withOpacity(0.5),
+                                    ];
+
+                                    return Transform.scale(
+                                      scale: scale,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(25),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(25),
+                                          gradient: RadialGradient(
+                                            colors: gradientColors,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.white.withOpacity(0.8),
+                                            width: 3,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.white.withOpacity(0.5),
+                                              blurRadius: 20,
+                                              spreadRadius: 5,
+                                            ),
+                                          ],
+                                        ),
+                                        child: Text(
+                                          _cachedResultText!,
+                                          style: GoogleFonts.chicle(
+                                            fontSize: _timedOut ? 28 : 32,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            shadows: [
+                                              Shadow(
+                                                color: Colors.black.withOpacity(0.9),
+                                                blurRadius: 8,
                                                 offset: const Offset(3, 3),
+                                              ),
+                                            ],
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 40),
+                              ],
+
+                              // THE PSYCHEDELIC BUTTON
+                              if (_showButton && !_timedOut && !_showInstructions && !_gameComplete && (_hasClickedReady || _isPracticeMode || _isUltimateTournament))
+                                AnimatedBuilder(
+                                  animation: _buttonController,
+                                  builder: (context, child) {
+                                    return AnimatedBuilder(
+                                      animation: _pulsController,
+                                      builder: (context, child) {
+                                        final buttonScale = 1.0 + (_pulsController.value * 0.1) + (_buttonController.value * 0.2);
+                                        final glowIntensity = 0.5 + (_pulsController.value * 0.5);
+
+                                        return Transform.scale(
+                                          scale: buttonScale,
+                                          child: GestureDetector(
+                                            onTap: _handleTap,
+                                            child: Container(
+                                              width: 250,
+                                              height: 250,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                gradient: RadialGradient(
+                                                  colors: _isRunning ? [
+                                                    Colors.red.withOpacity(0.9),
+                                                    Colors.orange.withOpacity(0.8),
+                                                    Colors.yellow.withOpacity(0.7),
+                                                    Colors.red.withOpacity(0.9),
+                                                  ] : [
+                                                    Colors.green.withOpacity(0.9),
+                                                    Colors.lime.withOpacity(0.8),
+                                                    Colors.cyan.withOpacity(0.7),
+                                                    Colors.green.withOpacity(0.9),
+                                                  ],
+                                                  stops: const [0.0, 0.3, 0.7, 1.0],
+                                                ),
+                                                border: Border.all(
+                                                  color: Colors.white.withOpacity(0.8),
+                                                  width: 4,
+                                                ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: Colors.white.withOpacity(glowIntensity),
+                                                    blurRadius: 25,
+                                                    spreadRadius: 8,
+                                                  ),
+                                                  BoxShadow(
+                                                    color: (_isRunning ? Colors.red : Colors.green).withOpacity(0.6),
+                                                    blurRadius: 40,
+                                                    spreadRadius: 5,
+                                                  ),
+                                                ],
+                                              ),
+                                              child: Center(
+                                                child: ShaderMask(
+                                                  shaderCallback: (bounds) => const LinearGradient(
+                                                    colors: [
+                                                      Colors.white,
+                                                      Colors.yellow,
+                                                      Colors.white,
+                                                    ],
+                                                  ).createShader(bounds),
+                                                  child: Text(
+                                                    _isRunning ? 'STOP' : 'START',
+                                                    style: GoogleFonts.creepster(
+                                                      fontSize: 36,
+                                                      color: Colors.white,
+                                                      fontWeight: FontWeight.bold,
+                                                      letterSpacing: 3.0,
+                                                      shadows: [
+                                                        Shadow(
+                                                          color: Colors.black.withOpacity(0.9),
+                                                          blurRadius: 10,
+                                                          offset: const Offset(3, 3),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+
+                              // Target instruction
+                              if (_isRunning && !_timedOut && !_showInstructions) ...[
+                                const SizedBox(height: 30),
+                                AnimatedBuilder(
+                                  animation: _scaleController,
+                                  builder: (context, child) {
+                                    final scale = 1.0 + (_scaleController.value * 0.05);
+                                    return Transform.scale(
+                                      scale: scale,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(20),
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              interpolatedColors[3].withOpacity(0.7),
+                                              interpolatedColors[5].withOpacity(0.5),
+                                            ],
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.white.withOpacity(0.4),
+                                            width: 2,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _cachedTargetText!,
+                                          style: GoogleFonts.chicle(
+                                            fontSize: 18,
+                                            color: Colors.white,
+                                            shadows: [
+                                              Shadow(
+                                                color: Colors.black.withOpacity(0.8),
+                                                blurRadius: 4,
+                                                offset: const Offset(2, 2),
                                               ),
                                             ],
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ),
+                                    );
+                                  },
                                 ),
-                              );
-                            },
-                          );
-                        },
-                      ),
+                              ],
+                            ],
+                          ),
+                        ),
 
-                    // Target instruction
-                    if (_isRunning && !_timedOut && !_showInstructions) ...[
-                      const SizedBox(height: 30),
-                      AnimatedBuilder(
-                        animation: _scaleController,
-                        builder: (context, child) {
-                          final scale = 1.0 + (_scaleController.value * 0.05);
-                          return Transform.scale(
-                            scale: scale,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                gradient: LinearGradient(
-                                  colors: [
-                                    interpolatedColors[3].withOpacity(0.7),
-                                    interpolatedColors[6].withOpacity(0.5),
-                                  ],
-                                ),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.4),
-                                  width: 2,
-                                ),
-                              ),
-                              child: Text(
-                                _cachedTargetText!,
-                                style: GoogleFonts.chicle(
-                                  fontSize: 18,
-                                  color: Colors.white,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.black.withOpacity(0.8),
-                                      blurRadius: 4,
-                                      offset: const Offset(2, 2),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-              // Results counter (only show for regular tournament)
-              if (!_isPracticeMode && !_timedOut && !_isUltimateTournament)
-                Positioned(
-                  bottom: 40,
-                  left: 20,
-                  right: 20,
-                  child: StreamBuilder<QuerySnapshot>(
-                    stream: _resultsStream,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasData) {
-                        final count = snapshot.data!.docs.length;
-                        return AnimatedBuilder(
-                          animation: _scaleController,
-                          builder: (context, child) {
-                            final scale = 1.0 + (_scaleController.value * 0.05);
-                            return Transform.scale(
-                              scale: scale,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(15),
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      interpolatedColors[0].withOpacity(0.8),
-                                      interpolatedColors[4].withOpacity(0.6),
-                                    ],
-                                  ),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.3),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Text(
-                                  '$count players finished this round...',
-                                  style: GoogleFonts.chicle(
-                                    fontSize: 14,
-                                    color: Colors.white.withOpacity(0.9),
-                                    shadows: [
-                                      Shadow(
-                                        color: Colors.black.withOpacity(0.7),
-                                        blurRadius: 3,
-                                        offset: const Offset(1, 1),
+                      // Results counter (only show for regular tournament)
+                      if (!_isPracticeMode && !_timedOut && !_isUltimateTournament && !_showReadyScreen)
+                        Positioned(
+                          bottom: 40,
+                          left: 20,
+                          right: 20,
+                          child: StreamBuilder<QuerySnapshot>(
+                            stream: _resultsStream,
+                            builder: (context, snapshot) {
+                              if (snapshot.hasData) {
+                                final count = snapshot.data!.docs.length;
+                                return AnimatedBuilder(
+                                  animation: _scaleController,
+                                  builder: (context, child) {
+                                    final scale = 1.0 + (_scaleController.value * 0.05);
+                                    return Transform.scale(
+                                      scale: scale,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(15),
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              interpolatedColors[0].withOpacity(0.8),
+                                              interpolatedColors[4].withOpacity(0.6),
+                                            ],
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.white.withOpacity(0.3),
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '$count players finished this round...',
+                                          style: GoogleFonts.chicle(
+                                            fontSize: 14,
+                                            color: Colors.white.withOpacity(0.9),
+                                            shadows: [
+                                              Shadow(
+                                                color: Colors.black.withOpacity(0.7),
+                                                blurRadius: 3,
+                                                offset: const Offset(1, 1),
+                                              ),
+                                            ],
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
                                       ),
-                                    ],
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    },
+                                    );
+                                  },
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ),
+                    ],
                   ),
                 ),
+              ),
             ],
           );
         },

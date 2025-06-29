@@ -1,4 +1,4 @@
-// lib/screens/lobby_screen.dart - FIXED 10 SECOND COUNTER TO 64 + RANDOM START
+// lib/screens/lobby_screen.dart - FIXED NAVIGATION
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,8 +6,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../screens/tournament_setup_screen.dart';
-import '../main.dart' show targetDuration, psychedelicPalette, backgroundSwapDuration;
+import '../main.dart' show targetDuration;
 import '../services/bot_service.dart';
+import '../config/gradient_config.dart';
 import 'precision_tap_screen.dart';
 
 class LobbyScreen extends StatefulWidget {
@@ -28,12 +29,24 @@ class _LobbyScreenState extends State<LobbyScreen>
   static const int TOURNAMENT_SIZE = 64;
 
   // Bot management
-  Timer? _fillTimer;
-  Timer? _displayTimer;
+  Timer? _botTimer;
+  Timer? _lockTimer;
   DateTime? _tournamentCreatedTime;
   List<BotPlayer> _tournamentBots = [];
   int _displayedPlayerCount = 0;
   int _actualPlayerCount = 0;
+  int _realPlayerCount = 1;
+
+  // ADDED: Ad countdown functionality
+  int _adCountdown = 0;
+  bool _isShowingAd = false;
+  bool _isLocked = false; // Tournament locked after 15 seconds
+  int _startingPlayerCount = 0;
+  bool _botsSubmitted = false; // FIXED: Track if bots are already submitted
+
+  // ADDED: Track tournament status separately
+  String _currentStatus = 'waiting';
+  int _currentRound = 0;
 
   // Animation controllers for INTENSE psychedelic effects
   late AnimationController _backgroundController;
@@ -44,13 +57,16 @@ class _LobbyScreenState extends State<LobbyScreen>
   late List<Color> _currentColors;
   late List<Color> _nextColors;
 
+  // ADDED: Listener reference for cleanup
+  StreamSubscription<DocumentSnapshot>? _tournamentListener;
+
   @override
   void initState() {
     super.initState();
 
-    // Initialize INTENSE psychedelic background
-    _currentColors = _generateGradient();
-    _nextColors = _generateGradient();
+    // Initialize INTENSE psychedelic background using gradient config
+    _currentColors = PsychedelicGradient.generateGradient(6);
+    _nextColors = PsychedelicGradient.generateGradient(6);
 
     // FASTER, more intense background animation
     _backgroundController = AnimationController(
@@ -59,7 +75,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     )..addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _currentColors = List.from(_nextColors);
-        _nextColors = _generateGradient();
+        _nextColors = PsychedelicGradient.generateGradient(6);
         _backgroundController.forward(from: 0);
       }
     })..forward();
@@ -87,28 +103,6 @@ class _LobbyScreenState extends State<LobbyScreen>
     });
   }
 
-  List<Color> _generateGradient() {
-    final random = math.Random();
-    // INTENSIFIED: More vibrant, saturated colors
-    final vibrantColors = [
-      Colors.red.shade700,
-      Colors.orange.shade600,
-      Colors.yellow.shade500,
-      Colors.green.shade600,
-      Colors.blue.shade700,
-      Colors.indigo.shade600,
-      Colors.purple.shade700,
-      Colors.pink.shade600,
-      Colors.cyan.shade500,
-      Colors.lime.shade600,
-      Colors.deepOrange.shade700,
-      Colors.deepPurple.shade700,
-    ];
-
-    return List.generate(
-        6, (_) => vibrantColors[random.nextInt(vibrantColors.length)]); // More colors for complexity
-  }
-
   Future<void> _joinOrCreate() async {
     try {
       print('Starting _joinOrCreate for tournament (TOURNAMENT_SIZE: $TOURNAMENT_SIZE)');
@@ -116,7 +110,7 @@ class _LobbyScreenState extends State<LobbyScreen>
       final snap = await _db
           .collection('tournaments')
           .where('status', isEqualTo: 'waiting')
-          .where('playerCount', isLessThan: TOURNAMENT_SIZE)
+          .where('realPlayerCount', isLessThan: TOURNAMENT_SIZE)
           .limit(1)
           .get();
 
@@ -124,68 +118,81 @@ class _LobbyScreenState extends State<LobbyScreen>
       if (snap.docs.isEmpty) {
         print('Creating new tournament (max $TOURNAMENT_SIZE players)');
 
-        // RANDOM STARTING PLAYER COUNT (1-64)
-        final random = math.Random();
-        final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1; // 1 to 64
-
+        // SIMPLE: Start with just the real player
         doc = await _db.collection('tournaments').add({
           'status': 'waiting',
           'round': 0,
           'players': [_uid],
-          'playerCount': randomStartCount, // CHANGED: Random instead of 1
-          'maxPlayers': TOURNAMENT_SIZE, // Store max for consistency
+          'playerCount': 1, // Start with just the real player
+          'realPlayers': [_uid],
+          'realPlayerCount': 1,
+          'maxPlayers': TOURNAMENT_SIZE,
           'createdAt': FieldValue.serverTimestamp(),
+          'gameType': 'precision_tap',
           'bots': <String, dynamic>{},
+          'botsSubmitted': false,
         });
         _tournamentCreatedTime = DateTime.now();
-        print('Created tournament with ID: ${doc.id}, starting with $randomStartCount players');
+        print('Created tournament with ID: ${doc.id}, starting with 1 player');
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = randomStartCount; // CHANGED: Use random count
-            _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
+            _actualPlayerCount = 1;
+            _displayedPlayerCount = 1;
+            _realPlayerCount = 1;
           });
         }
-        _startAutoFillTimer();
+
+        // Start the 15-second human join window immediately
+        _startHumanJoinWindow();
+
+        // ADDED: Set up tournament listener
+        _setupTournamentListener();
       } else {
         print('Joining existing tournament');
         doc = snap.docs.first.reference;
 
         final tourneyData = snap.docs.first.data() as Map<String, dynamic>;
-        final currentCount = tourneyData['playerCount'] as int? ?? 1;
+        final realPlayerCount = tourneyData['realPlayerCount'] as int? ?? 1;
+        final totalPlayerCount = tourneyData['playerCount'] as int? ?? 1;
 
         // Double-check we won't exceed limit
-        if (currentCount >= TOURNAMENT_SIZE) {
-          print('Tournament is full, creating new one instead');
-
-          // RANDOM STARTING PLAYER COUNT for full tournament case
-          final random = math.Random();
-          final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1;
+        if (realPlayerCount >= TOURNAMENT_SIZE) {
+          print('Tournament has max real players, creating new one instead');
 
           doc = await _db.collection('tournaments').add({
             'status': 'waiting',
             'round': 0,
             'players': [_uid],
-            'playerCount': randomStartCount, // CHANGED: Random instead of 1
+            'playerCount': 1,
+            'realPlayers': [_uid],
+            'realPlayerCount': 1,
             'maxPlayers': TOURNAMENT_SIZE,
             'createdAt': FieldValue.serverTimestamp(),
+            'gameType': 'precision_tap',
             'bots': <String, dynamic>{},
+            'botsSubmitted': false,
           });
           _tournamentCreatedTime = DateTime.now();
           if (mounted) {
             setState(() {
               _tourneyId = doc.id;
-              _actualPlayerCount = randomStartCount; // CHANGED: Use random count
-              _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
+              _actualPlayerCount = 1;
+              _displayedPlayerCount = 1;
+              _realPlayerCount = 1;
             });
           }
-          _startAutoFillTimer();
+          _startHumanJoinWindow();
+          _setupTournamentListener();
           return;
         }
 
+        // Join existing tournament
         await doc.update({
           'players': FieldValue.arrayUnion([_uid]),
           'playerCount': FieldValue.increment(1),
+          'realPlayers': FieldValue.arrayUnion([_uid]),
+          'realPlayerCount': FieldValue.increment(1),
         });
 
         if (tourneyData.containsKey('createdAt') && tourneyData['createdAt'] != null) {
@@ -195,153 +202,122 @@ class _LobbyScreenState extends State<LobbyScreen>
           _tournamentCreatedTime = DateTime.now();
         }
 
-        print('Joined tournament ${doc.id} with ${currentCount + 1} players');
+        print('Joined tournament ${doc.id} with ${totalPlayerCount + 1} total players (${realPlayerCount + 1} real)');
 
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = currentCount + 1;
-            _displayedPlayerCount = currentCount + 1;
+            _actualPlayerCount = totalPlayerCount + 1;
+            _displayedPlayerCount = totalPlayerCount + 1;
+            _realPlayerCount = realPlayerCount + 1;
           });
         }
 
-        _startAutoFillTimer();
+        // Continue with existing tournament timing
+        _startHumanJoinWindow();
+
+        // ADDED: Set up tournament listener
+        _setupTournamentListener();
       }
     } catch (e) {
       print('Error joining/creating tournament: $e');
       try {
-        // RANDOM STARTING PLAYER COUNT for fallback case
-        final random = math.Random();
-        final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1;
-
         final doc = await _db.collection('tournaments').add({
           'status': 'waiting',
           'round': 0,
           'players': [_uid],
-          'playerCount': randomStartCount, // CHANGED: Random instead of 1
+          'playerCount': 1,
+          'realPlayers': [_uid],
+          'realPlayerCount': 1,
           'maxPlayers': TOURNAMENT_SIZE,
           'createdAt': FieldValue.serverTimestamp(),
+          'gameType': 'precision_tap',
           'bots': <String, dynamic>{},
+          'botsSubmitted': false,
         });
         _tournamentCreatedTime = DateTime.now();
-        print('Created fallback tournament: ${doc.id} with $randomStartCount players');
+        print('Created fallback tournament: ${doc.id} with 1 player');
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = randomStartCount; // CHANGED: Use random count
-            _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
+            _actualPlayerCount = 1;
+            _displayedPlayerCount = 1;
+            _realPlayerCount = 1;
           });
         }
-        _startAutoFillTimer();
+        _startHumanJoinWindow();
+        _setupTournamentListener();
       } catch (e2) {
         print('Failed to create fallback tournament: $e2');
       }
     }
   }
 
-  void _startAutoFillTimer() {
-    if (_tournamentCreatedTime == null) return;
+  // ADDED: Setup tournament listener
+  void _setupTournamentListener() {
+    if (_tourneyId == null) return;
 
-    print('Starting auto-fill timer for tournament $_tourneyId (max $TOURNAMENT_SIZE)');
+    print('Setting up tournament listener for $_tourneyId');
+    _tournamentListener = _db.collection('tournaments').doc(_tourneyId!).snapshots().listen((snap) {
+      if (!mounted) return;
 
-    // FIXED: Much more aggressive bot filling to reach 64 in 10 seconds
-    _fillTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) { // Every 0.5 seconds
-      print('Checking if bots needed...');
-      _checkAndAddBots();
-    });
+      final data = snap.data();
+      if (data == null) return;
 
-    _startGradualDisplay();
+      final status = data['status'] as String? ?? 'waiting';
+      final round = data['round'] as int? ?? 0;
+      final playerCount = data['playerCount'] as int? ?? 0;
 
-    // FIXED: 20-second timer (10 for players + 10 for ad)
-    Timer(const Duration(seconds: 20), () {
-      print('20 seconds reached - force starting tournament');
-      _forceStartTournament();
+      print('Tournament update - Status: $status, Round: $round, Players: $playerCount');
+
+      // Update local state
+      setState(() {
+        _currentStatus = status;
+        _currentRound = round;
+        _actualPlayerCount = playerCount;
+        _displayedPlayerCount = playerCount;
+      });
+
+      // Handle status changes
+      if (status == 'round' && round > 0 && !_isNavigating) {
+        print('🎮 Tournament started! Navigating to game...');
+        // Add a small delay to ensure UI updates first
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted && !_isNavigating) {
+            _navigateToGame(round);
+          }
+        });
+      }
+    }, onError: (error) {
+      print('❌ Error in tournament listener: $error');
     });
   }
 
-  void _startGradualDisplay() {
-    // FIXED: Display updates every 0.2 seconds for smooth counting
-    _displayTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      if (_displayedPlayerCount < _actualPlayerCount) {
-        setState(() {
-          final remaining = _actualPlayerCount - _displayedPlayerCount;
-          // More aggressive increment to reach 64 in 10 seconds
-          final increment = remaining > 30 ? 3 : remaining > 10 ? 2 : 1;
-          _displayedPlayerCount = math.min(_displayedPlayerCount + increment, _actualPlayerCount);
-        });
-      }
+  // Start 15-second window for humans to join
+  void _startHumanJoinWindow() {
+    if (_tournamentCreatedTime == null) return;
+
+    print('Starting 15-second human join window');
+
+    // Check for new players and add bots every 500ms
+    _botTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      _checkAndAddBots();
+    });
+
+    // Lock tournament after 15 seconds
+    _lockTimer = Timer(const Duration(seconds: 15), () {
+      print('15 seconds elapsed - locking tournament and filling to 64 players');
+      _lockTournamentAndFill();
     });
   }
 
   Future<void> _checkAndAddBots() async {
-    if (_tourneyId == null || _tournamentCreatedTime == null) {
-      print('No tournament ID or creation time');
+    if (_tourneyId == null || _tournamentCreatedTime == null || _isLocked) {
       return;
     }
 
     final waitTime = DateTime.now().difference(_tournamentCreatedTime!);
     final secondsElapsed = waitTime.inSeconds;
-    print('Wait time: $secondsElapsed seconds');
-
-    final tourneyDoc = await _db.collection('tournaments').doc(_tourneyId!).get();
-    final data = tourneyDoc.data();
-    if (data == null) {
-      print('No tournament data found');
-      return;
-    }
-
-    final currentCount = data['playerCount'] as int? ?? 0;
-    final status = data['status'] as String? ?? 'waiting';
-
-    print('Current count: $currentCount/$TOURNAMENT_SIZE, Status: $status');
-
-    if (status != 'waiting' || currentCount >= TOURNAMENT_SIZE) {
-      print('Tournament not waiting or already full');
-      return;
-    }
-
-    // FIXED: Aggressive progression to reach 64 players in exactly 10 seconds
-    int targetCount = currentCount; // Never reduce
-
-    if (secondsElapsed <= 10) {
-      // Linear progression to 64 over 10 seconds
-      final progressRatio = secondsElapsed / 10.0;
-      targetCount = math.max(currentCount, (TOURNAMENT_SIZE * progressRatio).round());
-
-      // UPDATED: Ensure we hit key milestones but never go below current count
-      if (secondsElapsed >= 2 && targetCount < 16) targetCount = math.max(currentCount, 16);   // 16 by 2 seconds
-      if (secondsElapsed >= 4 && targetCount < 32) targetCount = math.max(currentCount, 32);   // 32 by 4 seconds
-      if (secondsElapsed >= 6 && targetCount < 48) targetCount = math.max(currentCount, 48);   // 48 by 6 seconds
-      if (secondsElapsed >= 8 && targetCount < 56) targetCount = math.max(currentCount, 56);   // 56 by 8 seconds
-      if (secondsElapsed >= 10) targetCount = TOURNAMENT_SIZE;         // 64 by 10 seconds
-
-      print('${secondsElapsed}s: Target $targetCount players (progress: ${(progressRatio * 100).toInt()}%)');
-    }
-
-    // Add bots if we're below target and below max
-    if (targetCount > currentCount && currentCount < TOURNAMENT_SIZE) {
-      final botsToAdd = math.min(targetCount - currentCount, TOURNAMENT_SIZE - currentCount);
-      print('Adding $botsToAdd bots to reach $targetCount (current: $currentCount)');
-      try {
-        final newBots = await BotService.addBotsToTournament(_tourneyId!, botsToAdd);
-        _tournamentBots.addAll(newBots);
-        print('Successfully added ${newBots.length} bots');
-
-        if (mounted) {
-          setState(() {
-            _actualPlayerCount = math.min(targetCount, TOURNAMENT_SIZE);
-          });
-        }
-      } catch (e) {
-        print('Error adding bots: $e');
-      }
-    } else {
-      print('No bots needed - at target or full ($currentCount >= $targetCount or $currentCount >= $TOURNAMENT_SIZE)');
-    }
-  }
-
-  Future<void> _forceStartTournament() async {
-    if (_tourneyId == null) return;
 
     final tourneyDoc = await _db.collection('tournaments').doc(_tourneyId!).get();
     final data = tourneyDoc.data();
@@ -350,53 +326,234 @@ class _LobbyScreenState extends State<LobbyScreen>
     final currentCount = data['playerCount'] as int? ?? 0;
     final status = data['status'] as String? ?? 'waiting';
 
-    if (status != 'waiting') return;
-
-    // FIXED: Ensure exactly TOURNAMENT_SIZE players before starting
-    if (currentCount < TOURNAMENT_SIZE) {
-      final botsToAdd = TOURNAMENT_SIZE - currentCount;
-      print('Force filling with $botsToAdd bots to reach exactly $TOURNAMENT_SIZE players');
-      final newBots = await BotService.addBotsToTournament(_tourneyId!, botsToAdd);
-      _tournamentBots.addAll(newBots);
+    if (status != 'waiting' || currentCount >= TOURNAMENT_SIZE) {
+      return;
     }
 
-    // Verify final count before starting
-    final finalDoc = await _db.collection('tournaments').doc(_tourneyId!).get();
-    final finalData = finalDoc.data();
-    final finalCount = finalData?['playerCount'] as int? ?? 0;
+    // Gradual bot addition over 15 seconds to simulate natural joining
+    int targetCount = currentCount;
 
-    print('Final verification: $finalCount players before starting tournament');
+    if (secondsElapsed <= 15) {
+      // Progressive bot addition: reach about 45-55 players by 15 seconds
+      final baseTarget = 3 + (secondsElapsed * 3); // About 3 players per second
+      final randomVariation = math.Random().nextInt(5); // Add some randomness
+      targetCount = math.min(currentCount + randomVariation + 1, baseTarget);
+      targetCount = math.min(targetCount, 55); // Cap at 55 before final fill
+    }
 
-    await _db.collection('tournaments').doc(_tourneyId!).update({
-      'status': 'round',
-      'round': 1,
-      'finalPlayerCount': finalCount, // Store final count for results
-    });
+    // Add bots if we're below target, but never exceed 64 total
+    if (targetCount > currentCount && currentCount < TOURNAMENT_SIZE) {
+      final botsToAdd = math.min(targetCount - currentCount, TOURNAMENT_SIZE - currentCount);
+      // CRITICAL: Ensure we never exceed 64 total players
+      final finalTarget = math.min(currentCount + botsToAdd, TOURNAMENT_SIZE);
+      final actualBotsToAdd = finalTarget - currentCount;
+
+      if (actualBotsToAdd > 0) {
+        print('Adding $actualBotsToAdd bots to reach $finalTarget (current: $currentCount)');
+        try {
+          final newBots = await BotService.addBotsToTournament(_tourneyId!, actualBotsToAdd);
+          _tournamentBots.addAll(newBots);
+          print('Successfully added ${newBots.length} bots');
+
+          if (mounted) {
+            setState(() {
+              _actualPlayerCount = finalTarget;
+              _displayedPlayerCount = finalTarget;
+            });
+          }
+        } catch (e) {
+          print('Error adding bots: $e');
+        }
+      }
+    }
   }
 
-  void _navigateToGame(int round) {
-    if (_isNavigating || !mounted) return;
+  // Lock tournament and fill to exactly 64 players
+  Future<void> _lockTournamentAndFill() async {
+    if (_tourneyId == null || _isLocked) return;
 
-    _isNavigating = true;
-    _submitAllBotResults(round);
+    _isLocked = true;
+    _botTimer?.cancel();
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PrecisionTapScreen(
-          target: targetDuration,
-          tourneyId: _tourneyId ?? 'test_tourney_id',
-          round: round,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _submitAllBotResults(int round) async {
     try {
       final tourneyDoc = await _db.collection('tournaments').doc(_tourneyId!).get();
       final data = tourneyDoc.data();
-      if (data == null || !data.containsKey('bots')) return;
+      if (data == null) return;
+
+      final currentTotalCount = data['playerCount'] as int? ?? 0;
+
+      // Fill to exactly 64 players
+      if (currentTotalCount < TOURNAMENT_SIZE) {
+        final botsNeeded = TOURNAMENT_SIZE - currentTotalCount;
+        print('Final fill: adding $botsNeeded bots to reach exactly $TOURNAMENT_SIZE players');
+
+        final newBots = await BotService.addBotsToTournament(_tourneyId!, botsNeeded);
+        _tournamentBots.addAll(newBots);
+
+        if (mounted) {
+          setState(() {
+            _actualPlayerCount = TOURNAMENT_SIZE;
+            _displayedPlayerCount = TOURNAMENT_SIZE;
+          });
+        }
+      }
+
+      // Show ad countdown
+      await _showAdCountdown();
+
+      // FIXED: Submit bot results BEFORE starting tournament
+      print('🤖 Pre-submitting bot results before tournament start...');
+      await _submitAllBotResults(1);
+      _botsSubmitted = true;
+
+      // Start the tournament
+      await _startTournament();
+
+    } catch (e) {
+      print('Error locking and filling tournament: $e');
+    }
+  }
+
+  Future<void> _showAdCountdown() async {
+    print('Starting 15-second ad countdown');
+
+    if (mounted) {
+      setState(() {
+        _isShowingAd = true;
+        _adCountdown = 15;
+      });
+    }
+
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _adCountdown--;
+        });
+      }
+
+      if (_adCountdown <= 0) {
+        timer.cancel();
+        if (mounted) {
+          setState(() {
+            _isShowingAd = false;
+          });
+        }
+      }
+    });
+
+    await Future.delayed(const Duration(seconds: 15));
+  }
+
+  Future<void> _startTournament() async {
+    if (_tourneyId == null) return;
+
+    print('🏁 Starting tournament with 64 participants...');
+
+    try {
+      // FIXED: Use transaction to ensure atomicity
+      await _db.runTransaction((transaction) async {
+        final tourneyRef = _db.collection('tournaments').doc(_tourneyId!);
+
+        transaction.update(tourneyRef, {
+          'status': 'round',
+          'round': 1,
+          'startedAt': FieldValue.serverTimestamp(),
+          'finalPlayerCount': TOURNAMENT_SIZE,
+          'botsSubmitted': true, // Track that bots are submitted
+        });
+      });
+
+      print('✅ Tournament status updated successfully - should trigger navigation via listener');
+
+      // The navigation will happen via the listener when it detects the status change
+    } catch (e) {
+      print('❌ Error starting tournament: $e');
+      rethrow;
+    }
+  }
+
+  void _navigateToGame(int round) {
+    print('🎮 _navigateToGame called - Round: $round, isNavigating: $_isNavigating, mounted: $mounted');
+
+    if (_isNavigating) {
+      print('🚫 Already navigating, skipping...');
+      return;
+    }
+
+    if (!mounted) {
+      print('🚫 Widget not mounted, skipping...');
+      return;
+    }
+
+    print('🔄 Setting navigation flag...');
+    setState(() {
+      _isNavigating = true;
+    });
+
+    // Cancel the tournament listener to prevent multiple navigation attempts
+    _tournamentListener?.cancel();
+
+    // Small delay to ensure state is updated
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) {
+        print('🚫 Widget unmounted during navigation delay');
+        return;
+      }
+
+      print('🚀 Pushing to PrecisionTapScreen...');
+      print('📋 Parameters: tourneyId=$_tourneyId, round=$round, target=$targetDuration');
+
+      try {
+        Navigator.pushReplacement(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) {
+              print('🎯 Building PrecisionTapScreen with target: $targetDuration, tourneyId: $_tourneyId, round: $round');
+              return PrecisionTapScreen(
+                target: targetDuration,
+                tourneyId: _tourneyId!,
+                round: round,
+                onUltimateComplete: null, // EXPLICITLY NULL for regular tournament
+              );
+            },
+            transitionDuration: const Duration(milliseconds: 300),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(
+                opacity: animation,
+                child: child,
+              );
+            },
+          ),
+        ).then((_) {
+          print('✅ Navigation completed successfully!');
+        }).catchError((error) {
+          print('❌ Navigation error: $error');
+          if (mounted) {
+            setState(() {
+              _isNavigating = false;
+            });
+          }
+        });
+      } catch (e) {
+        print('❌ Navigation exception: $e');
+        if (mounted) {
+          setState(() {
+            _isNavigating = false;
+          });
+        }
+      }
+    });
+  }
+
+  Future<void> _submitAllBotResults(int round) async {
+    print('🤖 Submitting bot results for round $round...');
+    try {
+      final tourneyDoc = await _db.collection('tournaments').doc(_tourneyId!).get();
+      final data = tourneyDoc.data();
+      if (data == null || !data.containsKey('bots')) {
+        print('🤖 No bot data found');
+        return;
+      }
 
       final botsData = data['bots'] as Map<String, dynamic>;
       final allBots = botsData.entries.map((entry) {
@@ -411,17 +568,23 @@ class _LobbyScreenState extends State<LobbyScreen>
       }).toList();
 
       if (allBots.isNotEmpty) {
-        BotService.submitBotResults(_tourneyId!, round, allBots, targetDuration);
+        print('🤖 Submitting results for ${allBots.length} bots...');
+        await BotService.submitBotResults(_tourneyId!, round, allBots, targetDuration);
+        print('🤖 Bot results submitted successfully');
+      } else {
+        print('🤖 No bots to submit results for');
       }
     } catch (e) {
-      print('Error getting tournament bots: $e');
+      print('❌ Error getting tournament bots: $e');
+      rethrow; // Re-throw so the calling method knows there was an error
     }
   }
 
   @override
   void dispose() {
-    _fillTimer?.cancel();
-    _displayTimer?.cancel();
+    _botTimer?.cancel();
+    _lockTimer?.cancel();
+    _tournamentListener?.cancel(); // ADDED: Cancel tournament listener
     _backgroundController.dispose();
     _pulsController.dispose();
     _rotationController.dispose();
@@ -431,65 +594,32 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   @override
   Widget build(BuildContext context) {
-    print('Lobby build called, tourneyId: $_tourneyId');
+    print('Lobby build called, tourneyId: $_tourneyId, status: $_currentStatus');
 
     if (_tourneyId == null) {
       print('Tournament ID is null, showing loading screen');
       return _buildPsychedelicLoadingScreen();
     }
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: _db.collection('tournaments').doc(_tourneyId!).snapshots(),
-      builder: (ctx, snap) {
-        print('StreamBuilder update - hasData: ${snap.hasData}');
+    // Use local state instead of StreamBuilder to avoid rebuild loops
+    if (_isShowingAd || _adCountdown > 0) {
+      print('🎬 Showing ad countdown screen (adCountdown: $_adCountdown)');
+      return _buildAdCountdownScreen();
+    }
 
-        if (!snap.hasData) {
-          print('No snapshot data, showing loading screen');
-          return _buildPsychedelicLoadingScreen();
-        }
+    switch (_currentStatus) {
+      case 'waiting':
+        print('⏳ Status is waiting, showing waiting screen with $_displayedPlayerCount players');
+        return _buildWaitingScreen(math.min(_displayedPlayerCount, TOURNAMENT_SIZE));
 
-        final data = snap.data!.data();
-        if (data == null) {
-          print('Snapshot data is null, showing error screen');
-          return _buildErrorScreen();
-        }
+      case 'round':
+        print('🎮 Status is ROUND! Showing starting screen...');
+        return _buildStartingScreen();
 
-        final tournamentData = data as Map<String, dynamic>;
-        final status = tournamentData['status'] as String? ?? 'waiting';
-        final count = tournamentData['playerCount'] as int? ?? 0;
-
-        print('Tournament status: $status, count: $count/$TOURNAMENT_SIZE');
-
-        // Update actual count without setState during build
-        if (_actualPlayerCount != count) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              setState(() {
-                _actualPlayerCount = math.min(count, TOURNAMENT_SIZE); // Cap at TOURNAMENT_SIZE
-              });
-            }
-          });
-        }
-
-        switch (status) {
-          case 'waiting':
-            print('Status is waiting, showing waiting screen with $_displayedPlayerCount players');
-            return _buildWaitingScreen(math.min(_displayedPlayerCount, TOURNAMENT_SIZE));
-
-          case 'round':
-            final round = tournamentData['round'] as int? ?? 1;
-            print('Status is round, navigating to game');
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _navigateToGame(round);
-            });
-            return _buildStartingScreen();
-
-          default:
-            print('Unknown status: $status, showing error screen');
-            return _buildErrorScreen();
-        }
-      },
-    );
+      default:
+        print('❌ Unknown status: $_currentStatus, showing error screen');
+        return _buildErrorScreen();
+    }
   }
 
   Widget _buildPsychedelicLoadingScreen() {
@@ -508,37 +638,25 @@ class _LobbyScreenState extends State<LobbyScreen>
 
           return Stack(
             children: [
-              // PRIMARY PSYCHEDELIC BACKGROUND
+              // PRIMARY PSYCHEDELIC BACKGROUND - Using gradient config
               Container(
                 decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: interpolatedColors,
-                    center: Alignment.center,
+                  gradient: PsychedelicGradient.getRadialGradient(
+                    interpolatedColors,
                     radius: 2.0,
-                    stops: [0.0, 0.15, 0.3, 0.45, 0.6, 0.8, 1.0],
                   ),
                 ),
               ),
 
-              // ROTATING OVERLAY 1 - More intense
+              // ROTATING OVERLAY 1 - Using gradient config
               AnimatedBuilder(
                 animation: _rotationController,
                 builder: (context, child) {
                   return Container(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[1].withOpacity(0.6),
-                          Colors.transparent,
-                          interpolatedColors[3].withOpacity(0.4),
-                          Colors.transparent,
-                          interpolatedColors[5].withOpacity(0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        transform: GradientRotation(_rotationController.value * 6.28),
+                      gradient: PsychedelicGradient.getOverlayGradient(
+                        interpolatedColors,
+                        _rotationController.value * 6.28,
                       ),
                     ),
                   );
@@ -551,17 +669,9 @@ class _LobbyScreenState extends State<LobbyScreen>
                 builder: (context, child) {
                   return Container(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[2].withOpacity(0.4),
-                          Colors.transparent,
-                          interpolatedColors[4].withOpacity(0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topRight,
-                        end: Alignment.bottomLeft,
-                        transform: GradientRotation(-_rotationController.value * 4.28),
+                      gradient: PsychedelicGradient.getOverlayGradient(
+                        interpolatedColors.reversed.toList(),
+                        -_rotationController.value * 4.28,
                       ),
                     ),
                   );
@@ -616,17 +726,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     gradient: SweepGradient(
-                                      colors: [
-                                        Colors.red.withOpacity(0.9),
-                                        Colors.orange.withOpacity(0.9),
-                                        Colors.yellow.withOpacity(0.9),
-                                        Colors.green.withOpacity(0.9),
-                                        Colors.blue.withOpacity(0.9),
-                                        Colors.indigo.withOpacity(0.9),
-                                        Colors.purple.withOpacity(0.9),
-                                        Colors.pink.withOpacity(0.9),
-                                        Colors.red.withOpacity(0.9),
-                                      ],
+                                      colors: PsychedelicGradient.getPsychedelicPalette(),
                                       transform: GradientRotation(rotation),
                                     ),
                                     boxShadow: [
@@ -679,22 +779,13 @@ class _LobbyScreenState extends State<LobbyScreen>
                           scale: textScale,
                           child: ShaderMask(
                             shaderCallback: (bounds) => LinearGradient(
-                              colors: [
-                                Colors.red,
-                                Colors.orange,
-                                Colors.yellow,
-                                Colors.green,
-                                Colors.blue,
-                                Colors.indigo,
-                                Colors.purple,
-                                Colors.pink,
-                              ],
+                              colors: PsychedelicGradient.getPsychedelicPalette(),
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               transform: GradientRotation(_rotationController.value * 3.14),
                             ).createShader(bounds),
                             child: Text(
-                              'LOADING TOURNAMENT',
+                              'JOINING TOURNAMENT',
                               style: GoogleFonts.creepster(
                                 fontSize: 28,
                                 color: Colors.white,
@@ -771,7 +862,6 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   Widget _buildWaitingScreen(int count) {
-    // FIXED: Always show out of TOURNAMENT_SIZE
     final cappedCount = math.min(count, TOURNAMENT_SIZE);
 
     return Scaffold(
@@ -789,14 +879,12 @@ class _LobbyScreenState extends State<LobbyScreen>
 
           return Stack(
             children: [
-              // PRIMARY PSYCHEDELIC BACKGROUND
+              // PRIMARY PSYCHEDELIC BACKGROUND - Using gradient config
               Container(
                 decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: interpolatedColors,
-                    center: Alignment.center,
+                  gradient: PsychedelicGradient.getRadialGradient(
+                    interpolatedColors,
                     radius: 2.0,
-                    stops: [0.0, 0.15, 0.3, 0.45, 0.6, 0.8, 1.0],
                   ),
                 ),
               ),
@@ -807,19 +895,9 @@ class _LobbyScreenState extends State<LobbyScreen>
                 builder: (context, child) {
                   return Container(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[1].withOpacity(0.5),
-                          Colors.transparent,
-                          interpolatedColors[3].withOpacity(0.4),
-                          Colors.transparent,
-                          interpolatedColors[5].withOpacity(0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        transform: GradientRotation(_rotationController.value * 6.28),
+                      gradient: PsychedelicGradient.getOverlayGradient(
+                        interpolatedColors,
+                        _rotationController.value * 6.28,
                       ),
                     ),
                   );
@@ -831,17 +909,9 @@ class _LobbyScreenState extends State<LobbyScreen>
                 builder: (context, child) {
                   return Container(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[2].withOpacity(0.4),
-                          Colors.transparent,
-                          interpolatedColors[4].withOpacity(0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topRight,
-                        end: Alignment.bottomLeft,
-                        transform: GradientRotation(-_rotationController.value * 4.28),
+                      gradient: PsychedelicGradient.getOverlayGradient(
+                        interpolatedColors.reversed.toList(),
+                        -_rotationController.value * 4.28,
                       ),
                     ),
                   );
@@ -886,22 +956,13 @@ class _LobbyScreenState extends State<LobbyScreen>
                             scale: titleScale,
                             child: ShaderMask(
                               shaderCallback: (bounds) => LinearGradient(
-                                colors: [
-                                  Colors.red,
-                                  Colors.orange,
-                                  Colors.yellow,
-                                  Colors.green,
-                                  Colors.blue,
-                                  Colors.indigo,
-                                  Colors.purple,
-                                  Colors.pink,
-                                ],
+                                colors: PsychedelicGradient.getPsychedelicPalette(),
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                                 transform: GradientRotation(_rotationController.value * 2.0),
                               ).createShader(bounds),
                               child: Text(
-                                'TOURNAMENT LOBBY',
+                                'MINUTE MADNESS',
                                 style: GoogleFonts.creepster(
                                   fontSize: 36,
                                   color: Colors.white,
@@ -937,7 +998,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                       AnimatedBuilder(
                         animation: _pulsController,
                         builder: (context, child) {
-                          final scale = 1.0 + (_pulsController.value * 0.4); // More intense pulse
+                          final scale = 1.0 + (_pulsController.value * 0.4);
                           final glowIntensity = 0.6 + (_pulsController.value * 0.6);
 
                           return Transform.scale(
@@ -946,14 +1007,9 @@ class _LobbyScreenState extends State<LobbyScreen>
                               padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 25),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(35),
-                                gradient: RadialGradient(
-                                  colors: [
-                                    interpolatedColors[0].withOpacity(0.95),
-                                    interpolatedColors[2].withOpacity(0.85),
-                                    interpolatedColors[4].withOpacity(0.75),
-                                    interpolatedColors[1].withOpacity(0.65),
-                                  ],
-                                  stops: [0.0, 0.3, 0.6, 1.0],
+                                gradient: PsychedelicGradient.getRadialGradient(
+                                  interpolatedColors,
+                                  radius: 1.0,
                                 ),
                                 border: Border.all(
                                   color: Colors.white.withOpacity(0.8),
@@ -991,7 +1047,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                                     child: Text(
                                       '$cappedCount',
                                       style: GoogleFonts.chicle(
-                                        fontSize: 72, // Even bigger
+                                        fontSize: 72,
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
                                         shadows: [
@@ -1006,7 +1062,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                                   ),
                                   const SizedBox(height: 10),
                                   Text(
-                                    '$cappedCount/$TOURNAMENT_SIZE JOINED',
+                                    '$cappedCount/$TOURNAMENT_SIZE PLAYERS',
                                     style: GoogleFonts.chicle(
                                       fontSize: 22,
                                       color: Colors.white.withOpacity(0.95),
@@ -1016,6 +1072,21 @@ class _LobbyScreenState extends State<LobbyScreen>
                                           color: Colors.black.withOpacity(0.8),
                                           blurRadius: 6,
                                           offset: const Offset(2, 2),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    _isLocked ? 'Tournament locked - finalizing...' : 'Players can join for ${15 - (DateTime.now().difference(_tournamentCreatedTime ?? DateTime.now()).inSeconds)} more seconds',
+                                    style: GoogleFonts.chicle(
+                                      fontSize: 16,
+                                      color: Colors.white.withOpacity(0.8),
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black.withOpacity(0.7),
+                                          blurRadius: 4,
+                                          offset: const Offset(1, 1),
                                         ),
                                       ],
                                     ),
@@ -1073,44 +1144,62 @@ class _LobbyScreenState extends State<LobbyScreen>
 
                       const SizedBox(height: 30),
 
-                      // STATUS TEXT WITH PSYCHEDELIC EFFECTS
-                      AnimatedBuilder(
-                        animation: _pulsController,
-                        builder: (context, child) {
-                          final textOpacity = 0.7 + (_pulsController.value * 0.3);
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(25),
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.black.withOpacity(0.4),
-                                  Colors.purple.withOpacity(0.3),
-                                  Colors.black.withOpacity(0.4),
-                                ],
-                              ),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1,
-                              ),
-                            ),
-                            child: Text(
-                              'Players joining the tournament...',
+                      // GAME INFO
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 30),
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(25),
+                          gradient: RadialGradient(
+                            colors: interpolatedColors.map((c) => c.withOpacity(0.3)).toList(),
+                            center: Alignment.center,
+                            radius: 1.0,
+                          ),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.4),
+                            width: 2,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Last Player Standing',
                               style: GoogleFonts.chicle(
-                                fontSize: 18,
-                                color: Colors.white.withOpacity(textOpacity),
+                                fontSize: 20,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
                                 shadows: [
                                   Shadow(
-                                    color: Colors.purple.withOpacity(0.8),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 0),
+                                    color: Colors.black.withOpacity(0.8),
+                                    blurRadius: 4,
+                                    offset: const Offset(2, 2),
                                   ),
                                 ],
                               ),
                               textAlign: TextAlign.center,
                             ),
-                          );
-                        },
+                            const SizedBox(height: 10),
+                            Text(
+                              '⚡ 64-player elimination tournament\n'
+                                  '🎯 6 rounds of precision timing challenges\n'
+                                  '⏱️ Hit the perfect timing window\n'
+                                  '💥 Miss the target and you\'re eliminated!\n'
+                                  '🏆 Last player standing wins the madness',
+                              style: GoogleFonts.chicle(
+                                fontSize: 14,
+                                color: Colors.white.withOpacity(0.9),
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black.withOpacity(0.7),
+                                    blurRadius: 3,
+                                    offset: const Offset(1, 1),
+                                  ),
+                                ],
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -1123,7 +1212,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     );
   }
 
-  Widget _buildStartingScreen() {
+  Widget _buildAdCountdownScreen() {
     return Scaffold(
       body: AnimatedBuilder(
         animation: _backgroundController,
@@ -1139,11 +1228,127 @@ class _LobbyScreenState extends State<LobbyScreen>
 
           return Container(
             decoration: BoxDecoration(
-              gradient: RadialGradient(
-                colors: interpolatedColors,
-                center: Alignment.center,
+              gradient: PsychedelicGradient.getRadialGradient(
+                interpolatedColors,
                 radius: 2.0,
-                stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+              ),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 300,
+                    height: 250,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.purple.withOpacity(0.9),
+                          Colors.pink.withOpacity(0.8),
+                          Colors.cyan.withOpacity(0.7),
+                        ],
+                      ),
+                      border: Border.all(color: Colors.white.withOpacity(0.6), width: 3),
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.play_circle_outline, size: 60, color: Colors.white),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Advertisement',
+                            style: GoogleFonts.chicle(
+                              fontSize: 24,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  AnimatedBuilder(
+                    animation: _pulsController,
+                    builder: (context, child) {
+                      final scale = 1.0 + (_pulsController.value * 0.2);
+                      return Transform.scale(
+                        scale: scale,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.orange.withOpacity(0.9),
+                                Colors.red.withOpacity(0.7),
+                              ],
+                            ),
+                            border: Border.all(color: Colors.white.withOpacity(0.8), width: 2),
+                          ),
+                          child: Text(
+                            'Tournament starts in $_adCountdown seconds...',
+                            style: GoogleFonts.creepster(
+                              fontSize: 20,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  Text(
+                    '64 players ready for MINUTE MADNESS!',
+                    style: GoogleFonts.chicle(
+                      fontSize: 16,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildStartingScreen() {
+    // Add a timer to navigate after showing this screen briefly
+    Timer(const Duration(seconds: 1), () {
+      if (mounted && !_isNavigating && _currentStatus == 'round' && _currentRound > 0) {
+        print('🎮 Auto-navigating from starting screen after delay');
+        _navigateToGame(_currentRound);
+      }
+    });
+
+    return Scaffold(
+      body: AnimatedBuilder(
+        animation: _backgroundController,
+        builder: (context, child) {
+          final t = _backgroundController.value;
+          final interpolatedColors = <Color>[];
+
+          for (int i = 0; i < _currentColors.length; i++) {
+            interpolatedColors.add(
+                Color.lerp(_currentColors[i], _nextColors[i], t) ?? _currentColors[i]
+            );
+          }
+
+          return Container(
+            decoration: BoxDecoration(
+              gradient: PsychedelicGradient.getRadialGradient(
+                interpolatedColors,
+                radius: 2.0,
               ),
             ),
             child: AnimatedBuilder(
@@ -1151,17 +1356,9 @@ class _LobbyScreenState extends State<LobbyScreen>
               builder: (context, child) {
                 return Container(
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        interpolatedColors[1].withOpacity(0.4),
-                        Colors.transparent,
-                        interpolatedColors[3].withOpacity(0.3),
-                        Colors.transparent,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      transform: GradientRotation(_scaleController.value * 6.28),
+                    gradient: PsychedelicGradient.getOverlayGradient(
+                      interpolatedColors,
+                      _scaleController.value * 6.28,
                     ),
                   ),
                   child: child,
@@ -1174,7 +1371,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                     AnimatedBuilder(
                       animation: _pulsController,
                       builder: (context, child) {
-                        final scale = 1.0 + (_pulsController.value * 0.4); // More intense
+                        final scale = 1.0 + (_pulsController.value * 0.4);
                         return Transform.scale(
                           scale: scale,
                           child: Container(
@@ -1197,7 +1394,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                               ],
                             ),
                             child: const Icon(
-                              Icons.rocket_launch,
+                              Icons.psychology,
                               size: 100,
                               color: Colors.white,
                             ),
@@ -1216,7 +1413,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                         ],
                       ).createShader(bounds),
                       child: Text(
-                        'BLAST OFF!',
+                        'ENTERING THE TOURNAMENT!',
                         style: GoogleFonts.creepster(
                           fontSize: 40,
                           color: Colors.white,
@@ -1234,7 +1431,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'The tournament begins...',
+                      'The 64-player precision tournament begins...',
                       style: GoogleFonts.chicle(
                         fontSize: 20,
                         color: Colors.white.withOpacity(0.9),
@@ -1246,6 +1443,11 @@ class _LobbyScreenState extends State<LobbyScreen>
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 40),
+                    const CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 3,
                     ),
                   ],
                 ),
@@ -1271,7 +1473,7 @@ class _LobbyScreenState extends State<LobbyScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'Cosmic interference detected...',
+                'Tournament connection failed...',
                 style: GoogleFonts.chicle(
                   fontSize: 24,
                   color: Colors.white,

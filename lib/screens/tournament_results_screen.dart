@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../main.dart' show psychedelicPalette, backgroundSwapDuration, targetDuration;
+import '../main.dart' show backgroundSwapDuration, targetDuration;
+import '../config/gradient_config.dart';
 import 'precision_tap_screen.dart';
 import 'duration_select_screen.dart';
 
@@ -49,9 +50,9 @@ class _TournamentResultsScreenState extends State<TournamentResultsScreen>
   void initState() {
     super.initState();
 
-    // Initialize psychedelic background
-    _currentColors = _generateGradient();
-    _nextColors = _generateGradient();
+    // Initialize psychedelic background using gradient config
+    _currentColors = PsychedelicGradient.generateGradient(6);
+    _nextColors = PsychedelicGradient.generateGradient(6);
 
     // Animations
     _backgroundController = AnimationController(
@@ -60,7 +61,7 @@ class _TournamentResultsScreenState extends State<TournamentResultsScreen>
     )..addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _currentColors = List.from(_nextColors);
-        _nextColors = _generateGradient();
+        _nextColors = PsychedelicGradient.generateGradient(6);
         _backgroundController.forward(from: 0);
       }
     })..forward();
@@ -76,12 +77,6 @@ class _TournamentResultsScreenState extends State<TournamentResultsScreen>
     );
 
     _calculateResults();
-  }
-
-  List<Color> _generateGradient() {
-    final random = Random();
-    return List.generate(
-        4, (_) => psychedelicPalette[random.nextInt(psychedelicPalette.length)]);
   }
 
   Future<void> _calculateResults() async {
@@ -400,9 +395,8 @@ class _TournamentResultsScreenState extends State<TournamentResultsScreen>
 
           return Container(
             decoration: BoxDecoration(
-              gradient: RadialGradient(
-                colors: interpolatedColors,
-                center: Alignment.center,
+              gradient: PsychedelicGradient.getRadialGradient(
+                interpolatedColors,
                 radius: 1.5,
               ),
             ),

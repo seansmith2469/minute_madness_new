@@ -1,4 +1,4 @@
-// lib/screens/memory_lobby_screen.dart - OPTIMIZED + RANDOM START
+// lib/screens/memory_lobby_screen.dart - ADDED 15 SECOND AD COUNTDOWN TO ORIGINAL
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -23,6 +23,7 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
   String? _tourneyId;
   bool _isNavigating = false;
 
+  // FIXED: Enforce exactly 64 players always
   static const int TOURNAMENT_SIZE = 64;
 
   // Bot management
@@ -32,6 +33,13 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
   List<MemoryBotPlayer> _tournamentBots = [];
   int _displayedPlayerCount = 0;
   int _actualPlayerCount = 0;
+  int _realPlayerCount = 1;
+
+  // ADDED: Ad countdown functionality
+  int _adCountdown = 0;
+  bool _isShowingAd = false;
+  bool _isFilling = false;
+  int _startingPlayerCount = 0; // Random starting count to simulate ongoing tournament
 
   // OPTIMIZED: Reduced animation controllers for better performance
   late AnimationController _primaryController;  // Combined background + rotation
@@ -99,7 +107,7 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
       final snap = await _db
           .collection('memory_tournaments')
           .where('status', isEqualTo: 'waiting')
-          .where('playerCount', isLessThan: TOURNAMENT_SIZE)
+          .where('realPlayerCount', isLessThan: TOURNAMENT_SIZE)
           .limit(1)
           .get();
 
@@ -107,65 +115,78 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
       if (snap.docs.isEmpty) {
         print('Memory Creating new memory tournament (max $TOURNAMENT_SIZE players)');
 
-        // RANDOM STARTING PLAYER COUNT (1-64)
+        // REALISTIC: Start with random player count (10-50) to simulate ongoing tournament
         final random = math.Random();
-        final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1; // 1 to 64
+        _startingPlayerCount = 10 + random.nextInt(41); // 10-50 players
 
         doc = await _db.collection('memory_tournaments').add({
           'status': 'waiting',
           'players': [_uid],
-          'playerCount': randomStartCount, // CHANGED: Random instead of 1
+          'playerCount': _startingPlayerCount + 1, // Include the real player
+          'realPlayers': [_uid],
+          'realPlayerCount': 1,
           'maxPlayers': TOURNAMENT_SIZE,
           'createdAt': FieldValue.serverTimestamp(),
+          'gameType': 'memory_game',
           'bots': <String, dynamic>{},
         });
         _tournamentCreatedTime = DateTime.now();
-        print('Memory Created tournament with ID: ${doc.id}, starting with $randomStartCount players');
+        print('Memory Created tournament with ID: ${doc.id}, starting with ${_startingPlayerCount + 1} players');
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = randomStartCount; // CHANGED: Use random count
-            _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
+            _actualPlayerCount = _startingPlayerCount + 1; // CHANGED: Use random count
+            _displayedPlayerCount = _startingPlayerCount + 1; // CHANGED: Use random count
+            _realPlayerCount = 1;
           });
         }
-        _startAutoFillTimer();
+        _startRealisticTournamentFill();
       } else {
         print('Memory Joining existing memory tournament');
         doc = snap.docs.first.reference;
 
         final tourneyData = snap.docs.first.data() as Map<String, dynamic>;
-        final currentCount = tourneyData['playerCount'] as int? ?? 1;
+        final realPlayerCount = tourneyData['realPlayerCount'] as int? ?? 1;
+        final totalPlayerCount = tourneyData['playerCount'] as int? ?? 1;
 
-        if (currentCount >= TOURNAMENT_SIZE) {
-          print('Memory Tournament is full, creating new one instead');
+        // Double-check we won't exceed limit
+        if (realPlayerCount >= TOURNAMENT_SIZE) {
+          print('Memory Tournament has max real players, creating new one instead');
 
           // RANDOM STARTING PLAYER COUNT for full tournament case
           final random = math.Random();
-          final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1;
+          _startingPlayerCount = 10 + random.nextInt(41);
 
           doc = await _db.collection('memory_tournaments').add({
             'status': 'waiting',
             'players': [_uid],
-            'playerCount': randomStartCount, // CHANGED: Random instead of 1
+            'playerCount': _startingPlayerCount + 1,
+            'realPlayers': [_uid],
+            'realPlayerCount': 1,
             'maxPlayers': TOURNAMENT_SIZE,
             'createdAt': FieldValue.serverTimestamp(),
+            'gameType': 'memory_game',
             'bots': <String, dynamic>{},
           });
           _tournamentCreatedTime = DateTime.now();
           if (mounted) {
             setState(() {
               _tourneyId = doc.id;
-              _actualPlayerCount = randomStartCount; // CHANGED: Use random count
-              _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
+              _actualPlayerCount = _startingPlayerCount + 1;
+              _displayedPlayerCount = _startingPlayerCount + 1;
+              _realPlayerCount = 1;
             });
           }
-          _startAutoFillTimer();
+          _startRealisticTournamentFill();
           return;
         }
 
+        // Join existing tournament
         await doc.update({
           'players': FieldValue.arrayUnion([_uid]),
           'playerCount': FieldValue.increment(1),
+          'realPlayers': FieldValue.arrayUnion([_uid]),
+          'realPlayerCount': FieldValue.increment(1),
         });
 
         if (tourneyData.containsKey('createdAt') && tourneyData['createdAt'] != null) {
@@ -175,171 +196,168 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
           _tournamentCreatedTime = DateTime.now();
         }
 
-        print('Memory Joined tournament ${doc.id} with ${currentCount + 1} players');
+        print('Memory Joined tournament ${doc.id} with ${totalPlayerCount + 1} total players (${realPlayerCount + 1} real)');
 
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = currentCount + 1;
-            _displayedPlayerCount = currentCount + 1;
+            _actualPlayerCount = totalPlayerCount + 1;
+            _displayedPlayerCount = totalPlayerCount + 1;
+            _realPlayerCount = realPlayerCount + 1;
           });
         }
 
-        _startAutoFillTimer();
+        _startRealisticTournamentFill();
       }
     } catch (e) {
       print('Memory Error joining/creating memory tournament: $e');
       try {
         // RANDOM STARTING PLAYER COUNT for fallback case
         final random = math.Random();
-        final randomStartCount = random.nextInt(TOURNAMENT_SIZE) + 1;
+        _startingPlayerCount = 10 + random.nextInt(41);
 
         final doc = await _db.collection('memory_tournaments').add({
           'status': 'waiting',
           'players': [_uid],
-          'playerCount': randomStartCount, // CHANGED: Random instead of 1
+          'playerCount': _startingPlayerCount + 1,
+          'realPlayers': [_uid],
+          'realPlayerCount': 1,
           'maxPlayers': TOURNAMENT_SIZE,
           'createdAt': FieldValue.serverTimestamp(),
+          'gameType': 'memory_game',
           'bots': <String, dynamic>{},
         });
         _tournamentCreatedTime = DateTime.now();
-        print('Memory Created fallback tournament: ${doc.id} with $randomStartCount players');
+        print('Memory Created fallback tournament: ${doc.id} with ${_startingPlayerCount + 1} players');
         if (mounted) {
           setState(() {
             _tourneyId = doc.id;
-            _actualPlayerCount = randomStartCount; // CHANGED: Use random count
-            _displayedPlayerCount = randomStartCount; // CHANGED: Use random count
+            _actualPlayerCount = _startingPlayerCount + 1;
+            _displayedPlayerCount = _startingPlayerCount + 1;
+            _realPlayerCount = 1;
           });
         }
-        _startAutoFillTimer();
+        _startRealisticTournamentFill();
       } catch (e2) {
         print('Memory Failed to create fallback tournament: $e2');
       }
     }
   }
 
-  void _startAutoFillTimer() {
+  // REALISTIC: Simulate tournament filling up naturally
+  void _startRealisticTournamentFill() {
     if (_tournamentCreatedTime == null) return;
 
-    print('Memory Starting auto-fill timer for memory tournament $_tourneyId (max $TOURNAMENT_SIZE)');
+    print('Memory Starting realistic tournament fill simulation');
+    _isFilling = true;
 
-    _fillTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      print('Memory Checking if bots needed...');
-      _checkAndAddBots();
-    });
-
-    _startGradualDisplay();
-
-    Timer(const Duration(seconds: 20), () {
-      print('Memory 20 seconds reached - force starting tournament');
-      _forceStartTournament();
-    });
-  }
-
-  void _startGradualDisplay() {
-    _displayTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      if (_displayedPlayerCount < _actualPlayerCount) {
+    // Gradual counter increase to 64
+    _fillTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
+      if (_displayedPlayerCount < TOURNAMENT_SIZE) {
         setState(() {
-          final remaining = _actualPlayerCount - _displayedPlayerCount;
-          final increment = remaining > 30 ? 3 : remaining > 10 ? 2 : 1;
-          _displayedPlayerCount = math.min(_displayedPlayerCount + increment, _actualPlayerCount);
+          final remaining = TOURNAMENT_SIZE - _displayedPlayerCount;
+          // Faster increase as we get closer to full
+          final increment = remaining > 30 ? math.Random().nextInt(3) + 1 :
+          remaining > 10 ? math.Random().nextInt(2) + 1 : 1;
+          _displayedPlayerCount = math.min(_displayedPlayerCount + increment, TOURNAMENT_SIZE);
         });
+      }
+
+      if (_displayedPlayerCount >= TOURNAMENT_SIZE) {
+        timer.cancel();
+        _fillComplete();
+      }
+    });
+
+    // Backup timer in case we need to force completion
+    Timer(const Duration(seconds: 15), () {
+      if (_displayedPlayerCount < TOURNAMENT_SIZE) {
+        setState(() {
+          _displayedPlayerCount = TOURNAMENT_SIZE;
+        });
+        _fillComplete();
       }
     });
   }
 
-  Future<void> _checkAndAddBots() async {
-    if (_tourneyId == null || _tournamentCreatedTime == null) {
-      print('Memory No tournament ID or creation time');
-      return;
-    }
+  // When tournament is full, add bots silently and show ad
+  Future<void> _fillComplete() async {
+    if (_tourneyId == null) return;
 
-    final waitTime = DateTime.now().difference(_tournamentCreatedTime!);
-    final secondsElapsed = waitTime.inSeconds;
-    print('Memory Wait time: $secondsElapsed seconds');
+    try {
+      _isFilling = false;
 
-    final tourneyDoc = await _db.collection('memory_tournaments').doc(_tourneyId!).get();
-    final data = tourneyDoc.data();
-    if (data == null) {
-      print('Memory No tournament data found');
-      return;
-    }
+      // Silently add bots to match the displayed count
+      final tourneyDoc = await _db.collection('memory_tournaments').doc(_tourneyId!).get();
+      final data = tourneyDoc.data();
+      if (data == null) return;
 
-    final currentCount = data['playerCount'] as int? ?? 0;
-    final status = data['status'] as String? ?? 'waiting';
+      final currentTotalCount = data['playerCount'] as int? ?? 0;
 
-    print('Memory Current count: $currentCount/$TOURNAMENT_SIZE, Status: $status');
+      // Add bots to reach exactly 64 (silently, no mention of bots)
+      if (currentTotalCount < TOURNAMENT_SIZE) {
+        final botsNeeded = TOURNAMENT_SIZE - currentTotalCount;
+        print('Memory Silently adding $botsNeeded participants to reach $TOURNAMENT_SIZE total');
 
-    if (status != 'waiting' || currentCount >= TOURNAMENT_SIZE) {
-      print('Memory Tournament not waiting or already full');
-      return;
-    }
-
-    int targetCount = currentCount;
-
-    if (secondsElapsed <= 10) {
-      final progressRatio = secondsElapsed / 10.0;
-      targetCount = math.max(currentCount, (TOURNAMENT_SIZE * progressRatio).round());
-
-      // UPDATED: Ensure we hit key milestones but never go below current count
-      if (secondsElapsed >= 2 && targetCount < 16) targetCount = math.max(currentCount, 16);
-      if (secondsElapsed >= 4 && targetCount < 32) targetCount = math.max(currentCount, 32);
-      if (secondsElapsed >= 6 && targetCount < 48) targetCount = math.max(currentCount, 48);
-      if (secondsElapsed >= 8 && targetCount < 56) targetCount = math.max(currentCount, 56);
-      if (secondsElapsed >= 10) targetCount = TOURNAMENT_SIZE;
-
-      print('Memory ${secondsElapsed}s: Target $targetCount players (progress: ${(progressRatio * 100).toInt()}%)');
-    }
-
-    if (targetCount > currentCount && currentCount < TOURNAMENT_SIZE) {
-      final botsToAdd = math.min(targetCount - currentCount, TOURNAMENT_SIZE - currentCount);
-      print('Memory Adding $botsToAdd bots to reach $targetCount (current: $currentCount)');
-      try {
-        final newBots = await MemoryBotService.addBotsToTournament(_tourneyId!, botsToAdd);
+        final newBots = await MemoryBotService.addBotsToTournament(_tourneyId!, botsNeeded);
         _tournamentBots.addAll(newBots);
-        print('Memory Successfully added ${newBots.length} bots');
 
         if (mounted) {
           setState(() {
-            _actualPlayerCount = math.min(targetCount, TOURNAMENT_SIZE);
+            _actualPlayerCount = TOURNAMENT_SIZE;
           });
         }
-      } catch (e) {
-        print('Memory Error adding bots: $e');
       }
-    } else {
-      print('Memory No bots needed - at target or full ($currentCount >= $targetCount or $currentCount >= $TOURNAMENT_SIZE)');
+
+      // Show ad countdown
+      await _showAdCountdown();
+
+      // Start the tournament
+      await _startTournament();
+
+    } catch (e) {
+      print('Memory Error completing tournament fill: $e');
     }
   }
 
-  Future<void> _forceStartTournament() async {
-    if (_tourneyId == null) return;
+  Future<void> _showAdCountdown() async {
+    print('Memory Starting 15-second ad countdown');
 
-    final tourneyDoc = await _db.collection('memory_tournaments').doc(_tourneyId!).get();
-    final data = tourneyDoc.data();
-    if (data == null) return;
-
-    final currentCount = data['playerCount'] as int? ?? 0;
-    final status = data['status'] as String? ?? 'waiting';
-
-    if (status != 'waiting') return;
-
-    if (currentCount < TOURNAMENT_SIZE) {
-      final botsToAdd = TOURNAMENT_SIZE - currentCount;
-      print('Memory Force filling with $botsToAdd bots to reach exactly $TOURNAMENT_SIZE players');
-      final newBots = await MemoryBotService.addBotsToTournament(_tourneyId!, botsToAdd);
-      _tournamentBots.addAll(newBots);
+    if (mounted) {
+      setState(() {
+        _isShowingAd = true;
+        _adCountdown = 15;
+      });
     }
 
-    final finalDoc = await _db.collection('memory_tournaments').doc(_tourneyId!).get();
-    final finalData = finalDoc.data();
-    final finalCount = finalData?['playerCount'] as int? ?? 0;
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _adCountdown--;
+        });
+      }
 
-    print('Memory Final verification: $finalCount players before starting tournament');
+      if (_adCountdown <= 0) {
+        timer.cancel();
+        if (mounted) {
+          setState(() {
+            _isShowingAd = false;
+          });
+        }
+      }
+    });
+
+    await Future.delayed(const Duration(seconds: 15));
+  }
+
+  Future<void> _startTournament() async {
+    if (_tourneyId == null) return;
+
+    print('Memory Starting tournament with 64 participants');
 
     await _db.collection('memory_tournaments').doc(_tourneyId!).update({
       'status': 'active',
-      'finalPlayerCount': finalCount,
+      'finalPlayerCount': TOURNAMENT_SIZE, // Store final count for results
     });
   }
 
@@ -399,13 +417,14 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
         final status = tournamentData['status'] as String? ?? 'waiting';
         final count = tournamentData['playerCount'] as int? ?? 0;
 
-        print('Memory Tournament status: $status, count: $count/$TOURNAMENT_SIZE');
+        print('Memory Tournament status: $status, displayed players: $_displayedPlayerCount/$TOURNAMENT_SIZE');
 
+        // Update actual count without setState during build
         if (_actualPlayerCount != count) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               setState(() {
-                _actualPlayerCount = math.min(count, TOURNAMENT_SIZE);
+                _actualPlayerCount = math.min(count, TOURNAMENT_SIZE); // Cap at TOURNAMENT_SIZE
               });
             }
           });
@@ -413,6 +432,9 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
 
         switch (status) {
           case 'waiting':
+            if (_isShowingAd || _adCountdown > 0) {
+              return _buildAdCountdownScreen();
+            }
             print('Memory Status is waiting, showing waiting screen with $_displayedPlayerCount players');
             return _buildWaitingScreen(math.min(_displayedPlayerCount, TOURNAMENT_SIZE));
 
@@ -597,7 +619,7 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
                               transform: GradientRotation(_primaryController.value * 2.0),
                             ).createShader(bounds),
                             child: Text(
-                              'LOADING MEMORY TOURNAMENT',
+                              'JOINING MEMORY TOURNAMENT',
                               style: GoogleFonts.creepster(
                                 fontSize: 24,
                                 color: Colors.white,
@@ -825,7 +847,7 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    '$cappedCount/$TOURNAMENT_SIZE JOINED',
+                                    '$cappedCount/$TOURNAMENT_SIZE MIND READERS',
                                     style: GoogleFonts.chicle(
                                       fontSize: 18,
                                       color: Colors.white.withOpacity(0.9),
@@ -835,6 +857,21 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
                                           color: Colors.black.withOpacity(0.7),
                                           blurRadius: 4,
                                           offset: const Offset(2, 2),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    _isFilling ? 'Tournament filling up...' : 'Waiting for tournament to fill...',
+                                    style: GoogleFonts.chicle(
+                                      fontSize: 16,
+                                      color: Colors.white.withOpacity(0.8),
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black.withOpacity(0.7),
+                                          blurRadius: 4,
+                                          offset: const Offset(1, 1),
                                         ),
                                       ],
                                     ),
@@ -936,6 +973,118 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
                 ),
               ),
             ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAdCountdownScreen() {
+    return Scaffold(
+      body: AnimatedBuilder(
+        animation: _primaryController,
+        builder: (context, child) {
+          final t = _primaryController.value;
+          final interpolatedColors = <Color>[];
+
+          for (int i = 0; i < _currentColors.length; i++) {
+            interpolatedColors.add(
+                Color.lerp(_currentColors[i], _nextColors[i], t) ?? _currentColors[i]
+            );
+          }
+
+          return Container(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                colors: interpolatedColors,
+                center: Alignment.center,
+                radius: 2.0,
+                stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+              ),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 300,
+                    height: 250,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.purple.withOpacity(0.9),
+                          Colors.pink.withOpacity(0.8),
+                          Colors.cyan.withOpacity(0.7),
+                        ],
+                      ),
+                      border: Border.all(color: Colors.white.withOpacity(0.6), width: 3),
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.play_circle_outline, size: 60, color: Colors.white),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Advertisement',
+                            style: GoogleFonts.chicle(
+                              fontSize: 24,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  AnimatedBuilder(
+                    animation: _pulsController,
+                    builder: (context, child) {
+                      final scale = 1.0 + (_pulsController.value * 0.2);
+                      return Transform.scale(
+                        scale: scale,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.orange.withOpacity(0.9),
+                                Colors.red.withOpacity(0.7),
+                              ],
+                            ),
+                            border: Border.all(color: Colors.white.withOpacity(0.8), width: 2),
+                          ),
+                          child: Text(
+                            'Tournament starts in $_adCountdown seconds...',
+                            style: GoogleFonts.creepster(
+                              fontSize: 20,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  Text(
+                    '64 mind readers ready for the memory challenge!',
+                    style: GoogleFonts.chicle(
+                      fontSize: 16,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
           );
         },
       ),
@@ -1053,7 +1202,7 @@ class _MemoryLobbyScreenState extends State<MemoryLobbyScreen>
                     ),
                     const SizedBox(height: 15),
                     Text(
-                      'Test your mental limits...',
+                      'The 64-player memory tournament begins...',
                       style: GoogleFonts.chicle(
                         fontSize: 18,
                         color: Colors.white.withOpacity(0.9),
