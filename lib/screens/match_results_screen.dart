@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart' show psychedelicPalette, backgroundSwapDuration;
+import '../config/gradient_config.dart';
 import 'game_selection_screen.dart';
 import 'match_game_screen.dart';
 
@@ -63,9 +64,9 @@ class _MatchResultsScreenState extends State<MatchResultsScreen>
   void initState() {
     super.initState();
 
-    // Initialize OPTIMIZED psychedelic background
-    _currentColors = _generateGradient();
-    _nextColors = _generateGradient();
+    // Initialize OPTIMIZED psychedelic background using gradient config
+    _currentColors = PsychedelicGradient.generateGradient(6);
+    _nextColors = PsychedelicGradient.generateGradient(6);
 
     // OPTIMIZED: Single primary controller for background AND rotation
     _primaryController = AnimationController(
@@ -74,7 +75,7 @@ class _MatchResultsScreenState extends State<MatchResultsScreen>
     )..addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _currentColors = List.from(_nextColors);
-        _nextColors = _generateGradient();
+        _nextColors = PsychedelicGradient.generateGradient(6);
         _primaryController.forward(from: 0);
       }
     })..forward();
@@ -95,25 +96,6 @@ class _MatchResultsScreenState extends State<MatchResultsScreen>
     } else {
       _calculateTournamentResults();
     }
-  }
-
-  List<Color> _generateGradient() {
-    final random = math.Random();
-    // OPTIMIZED: Focused match-themed colors for better performance
-    final matchColors = [
-      Colors.purple.shade700,
-      Colors.pink.shade600,
-      Colors.indigo.shade700,
-      Colors.blue.shade700,
-      Colors.cyan.shade500,
-      Colors.teal.shade600,
-      Colors.green.shade600,
-      Colors.orange.shade600,
-    ];
-
-    // OPTIMIZED: Reduced from 10 to 4 colors for better performance
-    return List.generate(
-        4, (_) => matchColors[random.nextInt(matchColors.length)]);
   }
 
   void _handlePracticeMode() {
@@ -579,35 +561,22 @@ class _MatchResultsScreenState extends State<MatchResultsScreen>
 
           return Stack(
             children: [
-              // OPTIMIZED: Simplified background
+              // OPTIMIZED: Simplified background using gradient config
               Container(
                 decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: interpolatedColors,
-                    center: Alignment.center,
-                    radius: 1.5,
-                    stops: [0.0, 0.3, 0.6, 1.0],
-                  ),
+                  gradient: PsychedelicGradient.getRadialGradient(interpolatedColors),
                 ),
               ),
 
-              // OPTIMIZED: Single rotating overlay using primary controller
+              // OPTIMIZED: Single rotating overlay using gradient config
               AnimatedBuilder(
                 animation: _primaryController,
                 builder: (context, child) {
                   return Container(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[1].withOpacity(0.3),
-                          Colors.transparent,
-                          interpolatedColors[3].withOpacity(0.2),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        transform: GradientRotation(_primaryController.value * 6.28),
+                      gradient: PsychedelicGradient.getOverlayGradient(
+                        interpolatedColors,
+                        _primaryController.value * 6.28,
                       ),
                     ),
                   );

@@ -1,11 +1,11 @@
-// lib/screens/match_game_screen.dart - COMPLETE FIXED VERSION - ULTIMATE TOURNAMENT COMPATIBLE
+// lib/screens/match_game_screen.dart - FIXED VERSION WITH GRADIENT CONFIG
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../main.dart' show psychedelicPalette, backgroundSwapDuration;
+import '../config/gradient_config.dart';
 import '../services/match_bot_service.dart';
 import 'match_results_screen.dart';
 
@@ -62,7 +62,14 @@ class _MatchGameScreenState extends State<MatchGameScreen>
   bool _showingCards = false;
   bool _gameComplete = false;
   bool _hasSubmitted = false;
-  bool _hasSubmittedBots = false;
+  bool _hasCheckedBots = false;
+
+  // ADDED: Ready screen state
+  bool _showReadyScreen = true;
+  bool _hasClickedReady = false;
+
+  // ADDED: Check if ultimate tournament
+  bool get _isUltimateTournament => widget.onUltimateComplete != null;
 
   // Timing
   DateTime? _gameStartTime;
@@ -97,9 +104,9 @@ class _MatchGameScreenState extends State<MatchGameScreen>
   void initState() {
     super.initState();
 
-    // Initialize OPTIMIZED psychedelic animations
-    _currentColors = _generateGradient();
-    _nextColors = _generateGradient();
+    // Initialize OPTIMIZED psychedelic animations using gradient config
+    _currentColors = PsychedelicGradient.generateStableGradient(6);
+    _nextColors = PsychedelicGradient.generateGradient(6);
 
     // OPTIMIZED: Primary controller handles background AND rotation
     _primaryController = AnimationController(
@@ -108,7 +115,7 @@ class _MatchGameScreenState extends State<MatchGameScreen>
     )..addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _currentColors = List.from(_nextColors);
-        _nextColors = _generateGradient();
+        _nextColors = PsychedelicGradient.generateGradient(6);
         _primaryController.forward(from: 0);
       }
     })..forward();
@@ -141,29 +148,16 @@ class _MatchGameScreenState extends State<MatchGameScreen>
     // Initialize game
     _initializeCards();
 
-    // Submit bot results for tournament mode
-    if (!widget.isPractice) {
-      _submitBotResults();
+    // Check bot results for tournament mode (but not ultimate tournament)
+    if (!widget.isPractice && !_isUltimateTournament) {
+      _checkBotSubmission();
     }
-  }
 
-  List<Color> _generateGradient() {
-    final random = math.Random();
-    // OPTIMIZED: Reduced color count for better performance
-    final matchColors = [
-      Colors.purple.shade900,
-      Colors.pink.shade700,
-      Colors.indigo.shade800,
-      Colors.blue.shade800,
-      Colors.cyan.shade600,
-      Colors.teal.shade700,
-      Colors.green.shade700,
-      Colors.orange.shade700,
-    ];
-
-    // OPTIMIZED: Reduced from 10 to 6 colors
-    return List.generate(
-        6, (_) => matchColors[random.nextInt(matchColors.length)]);
+    // Skip ready screen for practice mode and ultimate tournament
+    if (widget.isPractice || _isUltimateTournament) {
+      _showReadyScreen = false;
+      _hasClickedReady = true;
+    }
   }
 
   void _initializeCards() {
@@ -180,10 +174,38 @@ class _MatchGameScreenState extends State<MatchGameScreen>
     _cards.shuffle();
   }
 
-  Future<void> _submitBotResults() async {
-    if (_hasSubmittedBots) return;
-    _hasSubmittedBots = true;
+  Future<void> _checkBotSubmission() async {
+    if (_hasCheckedBots) return;
+    _hasCheckedBots = true;
 
+    try {
+      final tourneyDoc = await _db
+          .collection('match_tournaments')
+          .doc(widget.tourneyId)
+          .get();
+
+      if (!tourneyDoc.exists) {
+        print('❌ Match tournament document not found');
+        return;
+      }
+
+      final data = tourneyDoc.data();
+      final botsSubmitted = data?['botsSubmitted'] as bool? ?? false;
+
+      if (botsSubmitted) {
+        print('✅ Match bots already submitted in lobby - skipping duplicate submission');
+      } else {
+        print('⚠️ Match bots not yet submitted - submitting now as fallback');
+        await _submitBotResults();
+      }
+    } catch (e) {
+      print('❌ Error checking match bot submission status: $e');
+      // Fallback: try to submit bots
+      await _submitBotResults();
+    }
+  }
+
+  Future<void> _submitBotResults() async {
     try {
       final tourneyDoc = await _db
           .collection('match_tournaments')
@@ -227,11 +249,20 @@ class _MatchGameScreenState extends State<MatchGameScreen>
       }
 
       if (allBots.isNotEmpty) {
-        MatchBotService.submitBotResults(widget.tourneyId, allBots);
+        print('🤖 Fallback: Submitting results for ${allBots.length} match bots...');
+        await MatchBotService.submitBotResults(widget.tourneyId, allBots);
+        print('✅ Fallback match bot submission complete');
       }
     } catch (e) {
       print('Error submitting match bot results: $e');
     }
+  }
+
+  void _handleReadyClick() {
+    setState(() {
+      _hasClickedReady = true;
+      _showReadyScreen = false;
+    });
   }
 
   void _startGame() {
@@ -456,35 +487,25 @@ class _MatchGameScreenState extends State<MatchGameScreen>
 
           return Stack(
             children: [
-              // OPTIMIZED: Simplified psychedelic background
+              // OPTIMIZED: Simplified psychedelic background using gradient config
               Container(
                 decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: interpolatedColors,
-                    center: Alignment.center,
+                  gradient: PsychedelicGradient.getRadialGradient(
+                    interpolatedColors,
                     radius: 2.0,
-                    stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
                   ),
                 ),
               ),
 
-              // OPTIMIZED: Single rotating overlay using primary controller
+              // OPTIMIZED: Single rotating overlay using gradient config
               AnimatedBuilder(
                 animation: _primaryController,
                 builder: (context, child) {
                   return Container(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[2].withOpacity(0.4),
-                          Colors.transparent,
-                          interpolatedColors[4].withOpacity(0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        transform: GradientRotation(_primaryController.value * 6.28),
+                      gradient: PsychedelicGradient.getOverlayGradient(
+                        interpolatedColors,
+                        _primaryController.value * 6.28,
                       ),
                     ),
                   );
@@ -493,284 +514,421 @@ class _MatchGameScreenState extends State<MatchGameScreen>
 
               // MAIN CONTENT - MOVED ABOVE EFFECTS
               SafeArea(
-                child: Column(
+                child: Stack(
                   children: [
-                    // PSYCHEDELIC HEADER
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          AnimatedBuilder(
-                            animation: _pulseController,
-                            builder: (context, child) {
-                              final scale = 1.0 + (_pulseController.value * 0.1);
-                              return Transform.scale(
-                                scale: scale,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(20),
-                                    gradient: RadialGradient(
-                                      colors: [
-                                        interpolatedColors[0].withOpacity(0.9),
-                                        interpolatedColors[3].withOpacity(0.7),
-                                      ],
-                                    ),
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(0.6),
-                                      width: 2,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.white.withOpacity(0.3),
-                                        blurRadius: 15,
-                                        spreadRadius: 2,
-                                      ),
+                    // READY SCREEN (for regular tournament)
+                    if (!_isUltimateTournament && _showReadyScreen && !widget.isPractice)
+                      Container(
+                        color: Colors.black.withOpacity(0.7),
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(30),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(25),
+                                  gradient: RadialGradient(
+                                    colors: [
+                                      Colors.purple.withOpacity(0.9),
+                                      Colors.pink.withOpacity(0.7),
+                                      Colors.cyan.withOpacity(0.5),
                                     ],
                                   ),
-                                  child: ShaderMask(
-                                    shaderCallback: (bounds) => LinearGradient(
-                                      colors: [Colors.white, Colors.yellow, Colors.white],
-                                    ).createShader(bounds),
-                                    child: Text(
-                                      'Match Madness',
+                                  border: Border.all(color: Colors.white, width: 3),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.purple.withOpacity(0.5),
+                                      blurRadius: 30,
+                                      spreadRadius: 10,
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '🃏 MATCH MADNESS 🃏',
                                       style: GoogleFonts.creepster(
-                                        fontSize: 18,
+                                        fontSize: 32,
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
-                                        shadows: [
-                                          Shadow(
-                                            color: Colors.black.withOpacity(0.8),
-                                            blurRadius: 6,
-                                            offset: const Offset(2, 2),
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 30),
+                                    Container(
+                                      padding: const EdgeInsets.all(20),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.3),
+                                        borderRadius: BorderRadius.circular(15),
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          const Icon(
+                                            Icons.info_outline,
+                                            color: Colors.white,
+                                            size: 30,
+                                          ),
+                                          const SizedBox(height: 15),
+                                          Text(
+                                            'HOW TO PLAY:',
+                                            style: GoogleFonts.chicle(
+                                              fontSize: 20,
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            '1. Click READY to begin\n'
+                                                '2. Memorize the card positions\n'
+                                                '3. Match the pairs as fast as possible\n'
+                                                '4. Wrong matches add 1 second penalty!',
+                                            style: GoogleFonts.chicle(
+                                              fontSize: 16,
+                                              color: Colors.white.withOpacity(0.9),
+                                              height: 1.5,
+                                            ),
+                                            textAlign: TextAlign.center,
                                           ),
                                         ],
                                       ),
                                     ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          if (_gameStarted && !_showingCards)
-                            AnimatedBuilder(
-                              animation: _pulseController,
-                              builder: (context, child) {
-                                final intensity = 0.7 + (_pulseController.value * 0.3);
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.purple.withOpacity(intensity),
-                                    borderRadius: BorderRadius.circular(15),
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(0.8),
-                                      width: 2,
+                                    const SizedBox(height: 30),
+                                    AnimatedBuilder(
+                                      animation: _pulseController,
+                                      builder: (context, child) {
+                                        final scale = 1.0 + (_pulseController.value * 0.1);
+                                        return Transform.scale(
+                                          scale: scale,
+                                          child: ElevatedButton(
+                                            onPressed: _handleReadyClick,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.purple,
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 50,
+                                                vertical: 20,
+                                              ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(30),
+                                              ),
+                                              elevation: 10,
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  Icons.play_arrow,
+                                                  size: 30,
+                                                  color: Colors.white,
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Text(
+                                                  'READY!',
+                                                  style: GoogleFonts.creepster(
+                                                    fontSize: 24,
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: 2.0,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.purple.withOpacity(0.5),
-                                        blurRadius: 15,
-                                        spreadRadius: 3,
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    // MAIN GAME UI
+                    if (!_showReadyScreen || widget.isPractice || _isUltimateTournament)
+                      Column(
+                        children: [
+                          // PSYCHEDELIC HEADER
+                          Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                AnimatedBuilder(
+                                  animation: _pulseController,
+                                  builder: (context, child) {
+                                    final scale = 1.0 + (_pulseController.value * 0.1);
+                                    return Transform.scale(
+                                      scale: scale,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(20),
+                                          gradient: RadialGradient(
+                                            colors: [
+                                              interpolatedColors[0].withOpacity(0.9),
+                                              interpolatedColors[3].withOpacity(0.7),
+                                            ],
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.white.withOpacity(0.6),
+                                            width: 2,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.white.withOpacity(0.3),
+                                              blurRadius: 15,
+                                              spreadRadius: 2,
+                                            ),
+                                          ],
+                                        ),
+                                        child: ShaderMask(
+                                          shaderCallback: (bounds) => LinearGradient(
+                                            colors: [Colors.white, Colors.yellow, Colors.white],
+                                          ).createShader(bounds),
+                                          child: Text(
+                                            'Match Madness',
+                                            style: GoogleFonts.creepster(
+                                              fontSize: 18,
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              shadows: [
+                                                Shadow(
+                                                  color: Colors.black.withOpacity(0.8),
+                                                  blurRadius: 6,
+                                                  offset: const Offset(2, 2),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                    ],
+                                    );
+                                  },
+                                ),
+                                if (_gameStarted && !_showingCards)
+                                  AnimatedBuilder(
+                                    animation: _pulseController,
+                                    builder: (context, child) {
+                                      final intensity = 0.7 + (_pulseController.value * 0.3);
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.purple.withOpacity(intensity),
+                                          borderRadius: BorderRadius.circular(15),
+                                          border: Border.all(
+                                            color: Colors.white.withOpacity(0.8),
+                                            width: 2,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.purple.withOpacity(0.5),
+                                              blurRadius: 15,
+                                              spreadRadius: 3,
+                                            ),
+                                          ],
+                                        ),
+                                        child: Text(
+                                          'Penalties: $_penaltySeconds',
+                                          style: GoogleFonts.chicle(
+                                            fontSize: 14,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            shadows: [
+                                              Shadow(
+                                                color: Colors.black.withOpacity(0.8),
+                                                blurRadius: 4,
+                                                offset: const Offset(2, 2),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                  child: Text(
-                                    'Penalties: $_penaltySeconds',
-                                    style: GoogleFonts.chicle(
-                                      fontSize: 14,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      shadows: [
-                                        Shadow(
-                                          color: Colors.black.withOpacity(0.8),
-                                          blurRadius: 4,
-                                          offset: const Offset(2, 2),
+                              ],
+                            ),
+                          ),
+
+                          // GAME STATUS WITH PSYCHEDELIC STYLING
+                          Stack(
+                            children: [
+                              AnimatedBuilder(
+                                animation: _pulseController,
+                                builder: (context, child) {
+                                  final scale = 1.0 + (_pulseController.value * 0.05);
+                                  return Transform.scale(
+                                    scale: scale,
+                                    child: Container(
+                                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                                      padding: const EdgeInsets.all(15),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            interpolatedColors[2].withOpacity(0.8),
+                                            interpolatedColors[5].withOpacity(0.6),
+                                          ],
+                                        ),
+                                        border: Border.all(
+                                          color: Colors.white.withOpacity(0.4),
+                                          width: 2,
+                                        ),
+                                      ),
+                                      child: ShaderMask(
+                                        shaderCallback: (bounds) => LinearGradient(
+                                          colors: [Colors.white, Colors.cyan, Colors.purple],
+                                        ).createShader(bounds),
+                                        child: Text(
+                                          !_gameStarted ? '🔮 Ready to match the tarot cards?' :
+                                          _showingCards ? '👁️ Memorize the cards!' :
+                                          _gameComplete ? '🎉 All cards matched!' : '🧠 Find the matching pairs!',
+                                          style: GoogleFonts.creepster(
+                                            fontSize: 16,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            shadows: [
+                                              Shadow(
+                                                color: Colors.black.withOpacity(0.8),
+                                                blurRadius: 6,
+                                                offset: const Offset(2, 2),
+                                              ),
+                                            ],
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+
+                              // LOCALIZED SUCCESS EFFECT - ONLY AROUND GAME STATUS
+                              if (_successController.isAnimating)
+                                AnimatedBuilder(
+                                  animation: _successController,
+                                  builder: (context, child) {
+                                    final explosion = _successController.value;
+                                    return Positioned.fill(
+                                      child: Container(
+                                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(20),
+                                          gradient: RadialGradient(
+                                            colors: [
+                                              Colors.green.withOpacity(0.6 * (1 - explosion)),
+                                              Colors.lime.withOpacity(0.4 * (1 - explosion)),
+                                              Colors.transparent,
+                                            ],
+                                            center: Alignment.center,
+                                            radius: explosion * 1.5,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+
+                              // LOCALIZED ERROR EFFECT - ONLY AROUND GAME STATUS
+                              if (_errorController.isAnimating)
+                                AnimatedBuilder(
+                                  animation: _errorController,
+                                  builder: (context, child) {
+                                    final explosion = _errorController.value;
+                                    return Positioned.fill(
+                                      child: Container(
+                                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(20),
+                                          gradient: RadialGradient(
+                                            colors: [
+                                              Colors.red.withOpacity(0.6 * (1 - explosion)),
+                                              Colors.orange.withOpacity(0.4 * (1 - explosion)),
+                                              Colors.transparent,
+                                            ],
+                                            center: Alignment.center,
+                                            radius: explosion * 1.5,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // FIXED: Always reserve space for feedback message to prevent layout shifts
+                          Container(
+                            height: 80, // Fixed height - always reserves this space
+                            margin: const EdgeInsets.symmetric(horizontal: 30),
+                            child: _showFeedbackMessage
+                                ? AnimatedBuilder(
+                              animation: _isPositiveFeedback ? _successController : _errorController,
+                              builder: (context, child) {
+                                final animValue = _isPositiveFeedback ? _successController.value : _errorController.value;
+                                final scale = 1.0 + (animValue * 0.2);
+
+                                return Transform.scale(
+                                  scale: scale,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(15),
+                                      gradient: LinearGradient(
+                                        colors: _isPositiveFeedback
+                                            ? [Colors.green.withOpacity(0.9), Colors.lime.withOpacity(0.7)]
+                                            : [Colors.red.withOpacity(0.9), Colors.orange.withOpacity(0.7)],
+                                      ),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.8),
+                                        width: 2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: (_isPositiveFeedback ? Colors.green : Colors.red).withOpacity(0.5),
+                                          blurRadius: 15,
+                                          spreadRadius: 3,
                                         ),
                                       ],
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        _feedbackMessage,
+                                        style: GoogleFonts.chicle(
+                                          fontSize: 18,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          shadows: [
+                                            Shadow(
+                                              color: Colors.black.withOpacity(0.8),
+                                              blurRadius: 4,
+                                              offset: const Offset(2, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
                                     ),
                                   ),
                                 );
                               },
-                            ),
+                            )
+                                : const SizedBox.shrink(), // Empty but maintains the Container's height
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // CARD GRID - STABLE POSITIONING
+                          Expanded(
+                            child: _gameStarted ? _buildCardGrid() : _buildStartButton(),
+                          ),
                         ],
                       ),
-                    ),
-
-                    // GAME STATUS WITH PSYCHEDELIC STYLING
-                    Stack(
-                      children: [
-                        AnimatedBuilder(
-                          animation: _pulseController,
-                          builder: (context, child) {
-                            final scale = 1.0 + (_pulseController.value * 0.05);
-                            return Transform.scale(
-                              scale: scale,
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 20),
-                                padding: const EdgeInsets.all(15),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(20),
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      interpolatedColors[2].withOpacity(0.8),
-                                      interpolatedColors[5].withOpacity(0.6),
-                                    ],
-                                  ),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.4),
-                                    width: 2,
-                                  ),
-                                ),
-                                child: ShaderMask(
-                                  shaderCallback: (bounds) => LinearGradient(
-                                    colors: [Colors.white, Colors.cyan, Colors.purple],
-                                  ).createShader(bounds),
-                                  child: Text(
-                                    !_gameStarted ? '🔮 Ready to match the tarot cards?' :
-                                    _showingCards ? '👁️ Memorize the cards!' :
-                                    _gameComplete ? '🎉 All cards matched!' : '🧠 Find the matching pairs!',
-                                    style: GoogleFonts.creepster(
-                                      fontSize: 16,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      shadows: [
-                                        Shadow(
-                                          color: Colors.black.withOpacity(0.8),
-                                          blurRadius: 6,
-                                          offset: const Offset(2, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-
-                        // LOCALIZED SUCCESS EFFECT - ONLY AROUND GAME STATUS
-                        if (_successController.isAnimating)
-                          AnimatedBuilder(
-                            animation: _successController,
-                            builder: (context, child) {
-                              final explosion = _successController.value;
-                              return Positioned.fill(
-                                child: Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(20),
-                                    gradient: RadialGradient(
-                                      colors: [
-                                        Colors.green.withOpacity(0.6 * (1 - explosion)),
-                                        Colors.lime.withOpacity(0.4 * (1 - explosion)),
-                                        Colors.transparent,
-                                      ],
-                                      center: Alignment.center,
-                                      radius: explosion * 1.5,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-
-                        // LOCALIZED ERROR EFFECT - ONLY AROUND GAME STATUS
-                        if (_errorController.isAnimating)
-                          AnimatedBuilder(
-                            animation: _errorController,
-                            builder: (context, child) {
-                              final explosion = _errorController.value;
-                              return Positioned.fill(
-                                child: Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(20),
-                                    gradient: RadialGradient(
-                                      colors: [
-                                        Colors.red.withOpacity(0.6 * (1 - explosion)),
-                                        Colors.orange.withOpacity(0.4 * (1 - explosion)),
-                                        Colors.transparent,
-                                      ],
-                                      center: Alignment.center,
-                                      radius: explosion * 1.5,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // FIXED: Always reserve space for feedback message to prevent layout shifts
-                    Container(
-                      height: 80, // Fixed height - always reserves this space
-                      margin: const EdgeInsets.symmetric(horizontal: 30),
-                      child: _showFeedbackMessage
-                          ? AnimatedBuilder(
-                        animation: _isPositiveFeedback ? _successController : _errorController,
-                        builder: (context, child) {
-                          final animValue = _isPositiveFeedback ? _successController.value : _errorController.value;
-                          final scale = 1.0 + (animValue * 0.2);
-
-                          return Transform.scale(
-                            scale: scale,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(15),
-                                gradient: LinearGradient(
-                                  colors: _isPositiveFeedback
-                                      ? [Colors.green.withOpacity(0.9), Colors.lime.withOpacity(0.7)]
-                                      : [Colors.red.withOpacity(0.9), Colors.orange.withOpacity(0.7)],
-                                ),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.8),
-                                  width: 2,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: (_isPositiveFeedback ? Colors.green : Colors.red).withOpacity(0.5),
-                                    blurRadius: 15,
-                                    spreadRadius: 3,
-                                  ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Text(
-                                  _feedbackMessage,
-                                  style: GoogleFonts.chicle(
-                                    fontSize: 18,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    shadows: [
-                                      Shadow(
-                                        color: Colors.black.withOpacity(0.8),
-                                        blurRadius: 4,
-                                        offset: const Offset(2, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      )
-                          : const SizedBox.shrink(), // Empty but maintains the Container's height
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // CARD GRID - STABLE POSITIONING
-                    Expanded(
-                      child: _gameStarted ? _buildCardGrid() : _buildStartButton(),
-                    ),
                   ],
                 ),
               ),

@@ -1,11 +1,11 @@
-// lib/screens/match_lobby_screen.dart - ADDED 15 SECOND AD COUNTDOWN TO ORIGINAL
+// lib/screens/match_lobby_screen.dart - FIXED VERSION WITH GRADIENT CONFIG
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../main.dart' show psychedelicPalette, backgroundSwapDuration;
+import '../config/gradient_config.dart';
 import '../services/match_bot_service.dart';
 import 'match_game_screen.dart';
 
@@ -39,6 +39,10 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
   bool _isShowingAd = false;
   bool _isFilling = false;
   int _startingPlayerCount = 0; // Random starting count to simulate ongoing tournament
+  bool _botsSubmitted = false; // Track if bots have been submitted
+
+  // Track tournament status
+  String _currentStatus = 'waiting';
 
   // OPTIMIZED: Reduced animation controllers for better performance
   late AnimationController _primaryController;  // Combined background + rotation
@@ -47,13 +51,16 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
   late List<Color> _currentColors;
   late List<Color> _nextColors;
 
+  // Listener reference for cleanup
+  StreamSubscription<DocumentSnapshot>? _tournamentListener;
+
   @override
   void initState() {
     super.initState();
 
-    // Initialize INTENSE but OPTIMIZED psychedelic background
-    _currentColors = _generateGradient();
-    _nextColors = _generateGradient();
+    // Initialize INTENSE but OPTIMIZED psychedelic background using gradient config
+    _currentColors = PsychedelicGradient.generateGradient(6);
+    _nextColors = PsychedelicGradient.generateGradient(6);
 
     // OPTIMIZED: Single primary controller for background AND rotation
     _primaryController = AnimationController(
@@ -62,7 +69,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
     )..addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _currentColors = List.from(_nextColors);
-        _nextColors = _generateGradient();
+        _nextColors = PsychedelicGradient.generateGradient(6);
         _primaryController.forward(from: 0);
       }
     })..forward();
@@ -76,27 +83,6 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _joinOrCreate();
     });
-  }
-
-  List<Color> _generateGradient() {
-    final random = math.Random();
-    // OPTIMIZED: Reduced color count for better performance
-    final vibrantColors = [
-      Colors.red.shade700,
-      Colors.orange.shade600,
-      Colors.yellow.shade500,
-      Colors.green.shade600,
-      Colors.blue.shade700,
-      Colors.indigo.shade600,
-      Colors.purple.shade700,
-      Colors.pink.shade600,
-      Colors.cyan.shade500,
-      Colors.lime.shade600,
-    ];
-
-    // OPTIMIZED: Reduced from 6 to 4 colors for better performance
-    return List.generate(
-        4, (_) => vibrantColors[random.nextInt(vibrantColors.length)]);
   }
 
   Future<void> _joinOrCreate() async {
@@ -128,6 +114,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
           'createdAt': FieldValue.serverTimestamp(),
           'gameType': 'match_madness',
           'bots': <String, dynamic>{},
+          'botsSubmitted': false,
         });
         _tournamentCreatedTime = DateTime.now();
         print('Match Created tournament with ID: ${doc.id}, starting with ${_startingPlayerCount + 1} players');
@@ -140,6 +127,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
           });
         }
         _startRealisticTournamentFill();
+        _setupTournamentListener();
       } else {
         print('Match Joining existing match tournament');
         doc = snap.docs.first.reference;
@@ -164,6 +152,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
             'createdAt': FieldValue.serverTimestamp(),
             'gameType': 'match_madness',
             'bots': <String, dynamic>{},
+            'botsSubmitted': false,
           });
           _tournamentCreatedTime = DateTime.now();
           if (mounted) {
@@ -175,6 +164,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
             });
           }
           _startRealisticTournamentFill();
+          _setupTournamentListener();
           return;
         }
 
@@ -205,6 +195,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
         }
 
         _startRealisticTournamentFill();
+        _setupTournamentListener();
       }
     } catch (e) {
       print('Match Error joining/creating match tournament: $e');
@@ -223,6 +214,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
           'createdAt': FieldValue.serverTimestamp(),
           'gameType': 'match_madness',
           'bots': <String, dynamic>{},
+          'botsSubmitted': false,
         });
         _tournamentCreatedTime = DateTime.now();
         print('Match Created fallback tournament: ${doc.id} with ${_startingPlayerCount + 1} players');
@@ -235,10 +227,49 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
           });
         }
         _startRealisticTournamentFill();
+        _setupTournamentListener();
       } catch (e2) {
         print('Match Failed to create fallback tournament: $e2');
       }
     }
+  }
+
+  // Setup tournament listener
+  void _setupTournamentListener() {
+    if (_tourneyId == null) return;
+
+    print('Setting up match tournament listener for $_tourneyId');
+    _tournamentListener = _db.collection('match_tournaments').doc(_tourneyId!).snapshots().listen((snap) {
+      if (!mounted) return;
+
+      final data = snap.data();
+      if (data == null) return;
+
+      final status = data['status'] as String? ?? 'waiting';
+      final playerCount = data['playerCount'] as int? ?? 0;
+
+      print('Match Tournament update - Status: $status, Players: $playerCount');
+
+      // Update local state
+      setState(() {
+        _currentStatus = status;
+        _actualPlayerCount = playerCount;
+        _displayedPlayerCount = playerCount;
+      });
+
+      // Handle status changes
+      if (status == 'active' && !_isNavigating) {
+        print('🎮 Match tournament started! Navigating to game...');
+        // Add a small delay to ensure UI updates first
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted && !_isNavigating) {
+            _navigateToGame();
+          }
+        });
+      }
+    }, onError: (error) {
+      print('❌ Error in match tournament listener: $error');
+    });
   }
 
   // REALISTIC: Simulate tournament filling up naturally
@@ -309,6 +340,11 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
       // Show ad countdown
       await _showAdCountdown();
 
+      // Submit bot results BEFORE starting tournament
+      print('🤖 Pre-submitting match bot results before tournament start...');
+      await _submitAllBotResults();
+      _botsSubmitted = true;
+
       // Start the tournament
       await _startTournament();
 
@@ -347,147 +383,141 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
     await Future.delayed(const Duration(seconds: 15));
   }
 
+  Future<void> _submitAllBotResults() async {
+    print('🤖 Submitting match bot results...');
+    try {
+      final tourneyDoc = await _db.collection('match_tournaments').doc(_tourneyId!).get();
+      final data = tourneyDoc.data();
+      if (data == null || !data.containsKey('bots')) {
+        print('🤖 No bot data found');
+        return;
+      }
+
+      final botsData = data['bots'] as Map<String, dynamic>;
+      final allBots = botsData.entries.map((entry) {
+        final botData = entry.value as Map<String, dynamic>;
+        return MatchBotPlayer(
+          id: entry.key,
+          name: botData['name'],
+          difficulty: MatchBotDifficulty.values.firstWhere(
+                (d) => d.name == botData['difficulty'],
+          ),
+        );
+      }).toList();
+
+      if (allBots.isNotEmpty) {
+        print('🤖 Submitting results for ${allBots.length} match bots...');
+        await MatchBotService.submitBotResults(_tourneyId!, allBots);
+        print('🤖 Match bot results submitted successfully');
+      } else {
+        print('🤖 No bots to submit results for');
+      }
+    } catch (e) {
+      print('❌ Error getting tournament bots: $e');
+      rethrow;
+    }
+  }
+
   Future<void> _startTournament() async {
     if (_tourneyId == null) return;
 
     print('Match Starting tournament with 64 participants');
 
-    await _db.collection('match_tournaments').doc(_tourneyId!).update({
-      'status': 'active',
-      'startedAt': FieldValue.serverTimestamp(),
-      'finalPlayerCount': TOURNAMENT_SIZE,
-    });
-  }
+    try {
+      await _db.runTransaction((transaction) async {
+        final tourneyRef = _db.collection('match_tournaments').doc(_tourneyId!);
 
-  void _startGradualDisplay() {
-    _displayTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      if (_displayedPlayerCount < _actualPlayerCount) {
-        setState(() {
-          final remaining = _actualPlayerCount - _displayedPlayerCount;
-          final increment = remaining > 30 ? 3 : remaining > 10 ? 2 : 1;
-          _displayedPlayerCount = math.min(_displayedPlayerCount + increment, _actualPlayerCount);
+        transaction.update(tourneyRef, {
+          'status': 'active',
+          'startedAt': FieldValue.serverTimestamp(),
+          'finalPlayerCount': TOURNAMENT_SIZE,
+          'botsSubmitted': true,
         });
-      }
-    });
-  }
+      });
 
-  Future<void> _checkAndAddBots() async {
-    if (_tourneyId == null || _tournamentCreatedTime == null) {
-      print('Match No tournament ID or creation time');
-      return;
+      print('✅ Match tournament status updated successfully - should trigger navigation via listener');
+    } catch (e) {
+      print('❌ Error starting match tournament: $e');
+      rethrow;
     }
-
-    final waitTime = DateTime.now().difference(_tournamentCreatedTime!);
-    final secondsElapsed = waitTime.inSeconds;
-    print('Match Wait time: $secondsElapsed seconds');
-
-    final tourneyDoc = await _db.collection('match_tournaments').doc(_tourneyId!).get();
-    final data = tourneyDoc.data();
-    if (data == null) {
-      print('Match No tournament data found');
-      return;
-    }
-
-    final currentCount = data['playerCount'] as int? ?? 0;
-    final status = data['status'] as String? ?? 'waiting';
-
-    print('Match Current count: $currentCount/$TOURNAMENT_SIZE, Status: $status');
-
-    if (status != 'waiting' || currentCount >= TOURNAMENT_SIZE) {
-      print('Match Tournament not waiting or already full');
-      return;
-    }
-
-    int targetCount = currentCount;
-
-    if (secondsElapsed <= 10) {
-      final progressRatio = secondsElapsed / 10.0;
-      targetCount = math.max(currentCount, (TOURNAMENT_SIZE * progressRatio).round());
-
-      // UPDATED: Ensure we hit key milestones but never go below current count
-      if (secondsElapsed >= 2 && targetCount < 16) targetCount = math.max(currentCount, 16);
-      if (secondsElapsed >= 4 && targetCount < 32) targetCount = math.max(currentCount, 32);
-      if (secondsElapsed >= 6 && targetCount < 48) targetCount = math.max(currentCount, 48);
-      if (secondsElapsed >= 8 && targetCount < 56) targetCount = math.max(currentCount, 56);
-      if (secondsElapsed >= 10) targetCount = TOURNAMENT_SIZE;
-
-      print('Match ${secondsElapsed}s: Target $targetCount players (progress: ${(progressRatio * 100).toInt()}%)');
-    }
-
-    if (targetCount > currentCount && currentCount < TOURNAMENT_SIZE) {
-      final botsToAdd = math.min(targetCount - currentCount, TOURNAMENT_SIZE - currentCount);
-      print('Match Adding $botsToAdd bots to reach $targetCount (current: $currentCount)');
-      try {
-        final newBots = await MatchBotService.addBotsToTournament(_tourneyId!, botsToAdd);
-        _tournamentBots.addAll(newBots);
-        print('Match Successfully added ${newBots.length} bots');
-
-        if (mounted) {
-          setState(() {
-            _actualPlayerCount = math.min(targetCount, TOURNAMENT_SIZE);
-          });
-        }
-      } catch (e) {
-        print('Match Error adding bots: $e');
-      }
-    } else {
-      print('Match No bots needed - at target or full ($currentCount >= $targetCount or $currentCount >= $TOURNAMENT_SIZE)');
-    }
-  }
-
-  Future<void> _forceStartTournament() async {
-    if (_tourneyId == null) return;
-
-    final tourneyDoc = await _db.collection('match_tournaments').doc(_tourneyId!).get();
-    final data = tourneyDoc.data();
-    if (data == null) return;
-
-    final currentCount = data['playerCount'] as int? ?? 0;
-    final status = data['status'] as String? ?? 'waiting';
-
-    if (status != 'waiting') return;
-
-    if (currentCount < TOURNAMENT_SIZE) {
-      final botsToAdd = TOURNAMENT_SIZE - currentCount;
-      print('Match Force filling with $botsToAdd bots to reach exactly $TOURNAMENT_SIZE players');
-      final newBots = await MatchBotService.addBotsToTournament(_tourneyId!, botsToAdd);
-      _tournamentBots.addAll(newBots);
-    }
-
-    final finalDoc = await _db.collection('match_tournaments').doc(_tourneyId!).get();
-    final finalData = finalDoc.data();
-    final finalCount = finalData?['playerCount'] as int? ?? 0;
-
-    print('Match Final verification: $finalCount players before starting tournament');
-
-    await _db.collection('match_tournaments').doc(_tourneyId!).update({
-      'status': 'active',
-      'finalPlayerCount': finalCount,
-    });
   }
 
   void _navigateToGame() {
-    if (_isNavigating || !mounted) return;
+    print('🎮 _navigateToGame called - isNavigating: $_isNavigating, mounted: $mounted');
 
-    _isNavigating = true;
+    if (_isNavigating) {
+      print('🚫 Already navigating, skipping...');
+      return;
+    }
+
+    if (!mounted) {
+      print('🚫 Widget not mounted, skipping...');
+      return;
+    }
+
+    print('🔄 Setting navigation flag...');
+    setState(() {
+      _isNavigating = true;
+    });
+
+    // Cancel the tournament listener to prevent multiple navigation attempts
+    _tournamentListener?.cancel();
 
     print('Match Navigating to match game with tournament ID: $_tourneyId');
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => MatchGameScreen(
-          isPractice: false,
-          tourneyId: _tourneyId ?? 'match_tournament',
-        ),
-      ),
-    );
+    // Small delay to ensure state is updated
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) {
+        print('🚫 Widget unmounted during navigation delay');
+        return;
+      }
+
+      print('🚀 Pushing to MatchGameScreen...');
+
+      try {
+        Navigator.pushReplacement(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) {
+              return MatchGameScreen(
+                isPractice: false,
+                tourneyId: _tourneyId ?? 'match_tournament',
+              );
+            },
+            transitionDuration: const Duration(milliseconds: 300),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(
+                opacity: animation,
+                child: child,
+              );
+            },
+          ),
+        ).then((_) {
+          print('✅ Navigation completed successfully!');
+        }).catchError((error) {
+          print('❌ Navigation error: $error');
+          if (mounted) {
+            setState(() {
+              _isNavigating = false;
+            });
+          }
+        });
+      } catch (e) {
+        print('❌ Navigation exception: $e');
+        if (mounted) {
+          setState(() {
+            _isNavigating = false;
+          });
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
     _fillTimer?.cancel();
     _displayTimer?.cancel();
+    _tournamentListener?.cancel();
     _primaryController.dispose();
     _pulsController.dispose();
     super.dispose();
@@ -495,55 +525,32 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
 
   @override
   Widget build(BuildContext context) {
-    print('Match lobby build called, tourneyId: $_tourneyId');
+    print('Match lobby build called, tourneyId: $_tourneyId, status: $_currentStatus');
 
     if (_tourneyId == null) {
       print('Match Tournament ID is null, showing loading screen');
       return _buildPsychedelicLoadingScreen();
     }
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: _db.collection('match_tournaments').doc(_tourneyId!).snapshots(),
-      builder: (ctx, snap) {
-        print('Match StreamBuilder update - hasData: ${snap.hasData}');
+    // Use local state instead of StreamBuilder to avoid rebuild loops
+    if (_isShowingAd || _adCountdown > 0) {
+      print('🎬 Showing ad countdown screen (adCountdown: $_adCountdown)');
+      return _buildAdCountdownScreen();
+    }
 
-        if (!snap.hasData) {
-          print('Match No snapshot data, showing loading screen');
-          return _buildPsychedelicLoadingScreen();
-        }
+    switch (_currentStatus) {
+      case 'waiting':
+        print('⏳ Status is waiting, showing waiting screen with $_displayedPlayerCount players');
+        return _buildWaitingScreen(math.min(_displayedPlayerCount, TOURNAMENT_SIZE));
 
-        final data = snap.data!.data();
-        if (data == null) {
-          print('Match Snapshot data is null, showing error screen');
-          return _buildErrorScreen();
-        }
+      case 'active':
+        print('🎮 Status is ACTIVE! Showing starting screen...');
+        return _buildStartingScreen();
 
-        final tournamentData = data as Map<String, dynamic>;
-        final status = tournamentData['status'] as String? ?? 'waiting';
-        final count = tournamentData['playerCount'] as int? ?? 0;
-
-        print('Match Tournament status: $status, displayed players: $_displayedPlayerCount/$TOURNAMENT_SIZE');
-
-        switch (status) {
-          case 'waiting':
-            if (_isShowingAd || _adCountdown > 0) {
-              return _buildAdCountdownScreen();
-            }
-            return _buildWaitingScreen(math.min(_displayedPlayerCount, TOURNAMENT_SIZE));
-
-          case 'active':
-            print('Match Status is active, navigating to game');
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _navigateToGame();
-            });
-            return _buildStartingScreen();
-
-          default:
-            print('Match Unknown status: $status, showing error screen');
-            return _buildErrorScreen();
-        }
-      },
-    );
+      default:
+        print('❌ Unknown status: $_currentStatus, showing error screen');
+        return _buildErrorScreen();
+    }
   }
 
   Widget _buildPsychedelicLoadingScreen() {
@@ -562,35 +569,25 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
 
           return Stack(
             children: [
-              // OPTIMIZED: Simplified background
+              // OPTIMIZED: Simplified background using gradient config
               Container(
                 decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: interpolatedColors,
-                    center: Alignment.center,
+                  gradient: PsychedelicGradient.getRadialGradient(
+                    interpolatedColors,
                     radius: 1.5,
-                    stops: [0.0, 0.3, 0.6, 1.0],
                   ),
                 ),
               ),
 
-              // OPTIMIZED: Single rotating overlay using primary controller
+              // OPTIMIZED: Single rotating overlay using gradient config
               AnimatedBuilder(
                 animation: _primaryController,
                 builder: (context, child) {
                   return Container(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[1].withOpacity(0.4),
-                          Colors.transparent,
-                          interpolatedColors[3].withOpacity(0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        transform: GradientRotation(_primaryController.value * 6.28),
+                      gradient: PsychedelicGradient.getOverlayGradient(
+                        interpolatedColors,
+                        _primaryController.value * 6.28,
                       ),
                     ),
                   );
@@ -643,15 +640,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     gradient: SweepGradient(
-                                      colors: [
-                                        Colors.red.withOpacity(0.9),
-                                        Colors.orange.withOpacity(0.9),
-                                        Colors.yellow.withOpacity(0.9),
-                                        Colors.green.withOpacity(0.9),
-                                        Colors.blue.withOpacity(0.9),
-                                        Colors.purple.withOpacity(0.9),
-                                        Colors.red.withOpacity(0.9),
-                                      ],
+                                      colors: PsychedelicGradient.getPsychedelicPalette(),
                                       transform: GradientRotation(rotation),
                                     ),
                                     boxShadow: [
@@ -699,14 +688,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                           scale: textScale,
                           child: ShaderMask(
                             shaderCallback: (bounds) => LinearGradient(
-                              colors: [
-                                Colors.red,
-                                Colors.orange,
-                                Colors.yellow,
-                                Colors.green,
-                                Colors.blue,
-                                Colors.purple,
-                              ],
+                              colors: PsychedelicGradient.getPsychedelicPalette(),
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               transform: GradientRotation(_primaryController.value * 2.0),
@@ -822,35 +804,25 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
 
           return Stack(
             children: [
-              // OPTIMIZED: Simplified background
+              // OPTIMIZED: Simplified background using gradient config
               Container(
                 decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: interpolatedColors,
-                    center: Alignment.center,
+                  gradient: PsychedelicGradient.getRadialGradient(
+                    interpolatedColors,
                     radius: 1.5,
-                    stops: [0.0, 0.3, 0.6, 1.0],
                   ),
                 ),
               ),
 
-              // OPTIMIZED: Single overlay instead of multiple
+              // OPTIMIZED: Single overlay using gradient config
               AnimatedBuilder(
                 animation: _primaryController,
                 builder: (context, child) {
                   return Container(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[1].withOpacity(0.4),
-                          Colors.transparent,
-                          interpolatedColors[3].withOpacity(0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        transform: GradientRotation(_primaryController.value * 4.0),
+                      gradient: PsychedelicGradient.getOverlayGradient(
+                        interpolatedColors,
+                        _primaryController.value * 4.0,
                       ),
                     ),
                   );
@@ -872,14 +844,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                             scale: titleScale,
                             child: ShaderMask(
                               shaderCallback: (bounds) => LinearGradient(
-                                colors: [
-                                  Colors.red,
-                                  Colors.orange,
-                                  Colors.yellow,
-                                  Colors.green,
-                                  Colors.blue,
-                                  Colors.purple,
-                                ],
+                                colors: PsychedelicGradient.getPsychedelicPalette(),
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                                 transform: GradientRotation(_primaryController.value * 1.5),
@@ -909,6 +874,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                                     ),
                                   ],
                                 ),
+                                textAlign: TextAlign.center,
                               ),
                             ),
                           );
@@ -930,14 +896,9 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                               padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 25),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(35),
-                                gradient: RadialGradient(
-                                  colors: [
-                                    interpolatedColors[0].withOpacity(0.95),
-                                    interpolatedColors[2].withOpacity(0.85),
-                                    interpolatedColors[4 % interpolatedColors.length].withOpacity(0.75),
-                                    interpolatedColors[1].withOpacity(0.65),
-                                  ],
-                                  stops: [0.0, 0.3, 0.6, 1.0],
+                                gradient: PsychedelicGradient.getRadialGradient(
+                                  interpolatedColors,
+                                  radius: 1.0,
                                 ),
                                 border: Border.all(
                                   color: Colors.white.withOpacity(0.8),
@@ -1138,11 +1099,9 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
 
           return Container(
             decoration: BoxDecoration(
-              gradient: RadialGradient(
-                colors: interpolatedColors,
-                center: Alignment.center,
+              gradient: PsychedelicGradient.getRadialGradient(
+                interpolatedColors,
                 radius: 2.0,
-                stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
               ),
             ),
             child: Center(
@@ -1235,6 +1194,14 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
   }
 
   Widget _buildStartingScreen() {
+    // Add a timer to navigate after showing this screen briefly
+    Timer(const Duration(seconds: 1), () {
+      if (mounted && !_isNavigating && _currentStatus == 'active') {
+        print('🎮 Auto-navigating from starting screen after delay');
+        _navigateToGame();
+      }
+    });
+
     return Scaffold(
       body: AnimatedBuilder(
         animation: _primaryController,
@@ -1250,11 +1217,9 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
 
           return Container(
             decoration: BoxDecoration(
-              gradient: RadialGradient(
-                colors: interpolatedColors,
-                center: Alignment.center,
+              gradient: PsychedelicGradient.getRadialGradient(
+                interpolatedColors,
                 radius: 1.5,
-                stops: [0.0, 0.4, 0.8, 1.0],
               ),
             ),
             child: AnimatedBuilder(
@@ -1262,17 +1227,9 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
               builder: (context, child) {
                 return Container(
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        interpolatedColors[1].withOpacity(0.3),
-                        Colors.transparent,
-                        interpolatedColors[3 % interpolatedColors.length].withOpacity(0.2),
-                        Colors.transparent,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      transform: GradientRotation(_pulsController.value * 4.0),
+                    gradient: PsychedelicGradient.getOverlayGradient(
+                      interpolatedColors,
+                      _pulsController.value * 4.0,
                     ),
                   ),
                   child: child,
@@ -1341,6 +1298,7 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                             ),
                           ],
                         ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -1357,6 +1315,11 @@ class _MatchLobbyScreenState extends State<MatchLobbyScreen>
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 40),
+                    const CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 3,
                     ),
                   ],
                 ),
