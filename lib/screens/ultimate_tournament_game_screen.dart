@@ -1,4 +1,4 @@
-// lib/screens/ultimate_tournament_game_screen.dart - GAME ORCHESTRATOR
+// lib/screens/ultimate_tournament_game_screen.dart - GAME ORCHESTRATOR WITH FIXES
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -19,11 +19,13 @@ import '../models/game_type.dart';
 class UltimateTournamentGameScreen extends StatefulWidget {
   final String tourneyId;
   final List<GameType> gameOrder;
+  final int? startingGameIndex;  // Add this to track where we are
 
   const UltimateTournamentGameScreen({
     super.key,
     required this.tourneyId,
     required this.gameOrder,
+    this.startingGameIndex,
   });
 
   @override
@@ -57,6 +59,9 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
   void initState() {
     super.initState();
 
+    // Initialize game index from widget parameter if provided
+    _currentGameIndex = widget.startingGameIndex ?? 0;
+
     // Initialize psychedelic background
     _currentColors = _generateGradient();
     _nextColors = _generateGradient();
@@ -65,9 +70,11 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
       vsync: this,
       duration: const Duration(seconds: 1),
     )..addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        _currentColors = List.from(_nextColors);
-        _nextColors = _generateGradient();
+      if (status == AnimationStatus.completed && mounted) {
+        setState(() {
+          _currentColors = List.from(_nextColors);
+          _nextColors = _generateGradient();
+        });
         _backgroundController.forward(from: 0);
       }
     })..forward();
@@ -98,8 +105,12 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
       Colors.yellow.shade600,
     ];
 
-    return List.generate(
-        6, (_) => ultimateColors[random.nextInt(ultimateColors.length)]);
+    // Ensure we get exactly the number of colors needed
+    final selectedColors = <Color>[];
+    for (int i = 0; i < 6; i++) {
+      selectedColors.add(ultimateColors[random.nextInt(ultimateColors.length)]);
+    }
+    return selectedColors;
   }
 
   Future<void> _initializeGame() async {
@@ -109,14 +120,24 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
       final data = tourneyDoc.data();
 
       if (data != null) {
-        _currentGameIndex = data['currentGameIndex'] as int? ?? 0;
+        final savedIndex = data['currentGameIndex'] as int? ?? 0;
+        // Use the higher of saved index or current index to handle navigation back
+        _currentGameIndex = savedIndex > _currentGameIndex ? savedIndex : _currentGameIndex;
       }
 
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
 
-      // Start the first game after a brief delay
+      // Check if we've completed all games
+      if (_currentGameIndex >= widget.gameOrder.length) {
+        _showFinalResults();
+        return;
+      }
+
+      // Start the current game after a brief delay
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) {
         _startCurrentGame();
@@ -124,13 +145,17 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
 
     } catch (e) {
       print('🏆 Error initializing game: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   void _startCurrentGame() {
+    if (!mounted) return;
+
     if (_currentGameIndex >= widget.gameOrder.length) {
       _showFinalResults();
       return;
@@ -142,68 +167,93 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
     // Submit bot results for this game
     _submitBotResultsForGame(currentGame);
 
-    // Navigate to the appropriate game screen
-    switch (currentGame) {
-      case GameType.precision:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => _UltimatePrecisionWrapper(
-              tourneyId: widget.tourneyId,
-              onComplete: _onGameComplete,
-            ),
-          ),
-        );
-        break;
+    // Add a small delay to ensure UI is ready
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
 
-      case GameType.momentum:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => _UltimateMomentumWrapper(
-              tourneyId: widget.tourneyId,
-              onComplete: _onGameComplete,
+      // Navigate to the appropriate game screen
+      switch (currentGame) {
+        case GameType.precision:
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) => _UltimatePrecisionWrapper(
+                tourneyId: widget.tourneyId,
+                onComplete: _onGameComplete,
+              ),
+              transitionDuration: const Duration(milliseconds: 300),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(opacity: animation, child: child);
+              },
             ),
-          ),
-        );
-        break;
+          );
+          break;
 
-      case GameType.memory:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => _UltimateMemoryWrapper(
-              tourneyId: widget.tourneyId,
-              onComplete: _onGameComplete,
+        case GameType.momentum:
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) => _UltimateMomentumWrapper(
+                tourneyId: widget.tourneyId,
+                onComplete: _onGameComplete,
+              ),
+              transitionDuration: const Duration(milliseconds: 300),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(opacity: animation, child: child);
+              },
             ),
-          ),
-        );
-        break;
+          );
+          break;
 
-      case GameType.match:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => _UltimateMatchWrapper(
-              tourneyId: widget.tourneyId,
-              onComplete: _onGameComplete,
+        case GameType.memory:
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) => _UltimateMemoryWrapper(
+                tourneyId: widget.tourneyId,
+                onComplete: _onGameComplete,
+              ),
+              transitionDuration: const Duration(milliseconds: 300),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(opacity: animation, child: child);
+              },
             ),
-          ),
-        );
-        break;
+          );
+          break;
 
-      case GameType.maze:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => _UltimateMazeWrapper(
-              tourneyId: widget.tourneyId,
-              onComplete: _onGameComplete,
+        case GameType.match:
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) => _UltimateMatchWrapper(
+                tourneyId: widget.tourneyId,
+                onComplete: _onGameComplete,
+              ),
+              transitionDuration: const Duration(milliseconds: 300),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(opacity: animation, child: child);
+              },
             ),
-          ),
-        );
-        break;
-    }
+          );
+          break;
+
+        case GameType.maze:
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) => _UltimateMazeWrapper(
+                tourneyId: widget.tourneyId,
+                onComplete: _onGameComplete,
+              ),
+              transitionDuration: const Duration(milliseconds: 300),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeTransition(opacity: animation, child: child);
+              },
+            ),
+          );
+          break;
+      }
+    });
   }
 
   Future<void> _submitBotResultsForGame(GameType gameType) async {
@@ -243,29 +293,51 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
   }
 
   void _onGameComplete(Map<String, dynamic> gameResult) async {
+    if (!mounted) return;
+
     print('🏆 Game ${_currentGameIndex + 1} completed with result: $gameResult');
+    print('🏆 Result details: $gameResult');
 
-    // Save player result
-    await _savePlayerGameResult(gameResult);
+    try {
+      // Save player result
+      await _savePlayerGameResult(gameResult);
 
-    // Get current standings after this game
-    await _updateCurrentStandings();
+      // Get current standings after this game
+      await _updateCurrentStandings();
 
-    // Move to next game
-    _currentGameIndex++;
+      if (!mounted) return;
 
-    if (_currentGameIndex >= widget.gameOrder.length) {
-      // All games completed
-      _showFinalResults();
-    } else {
-      // Show intermediate results and move to next game
-      _showIntermediateResults();
+      // Move to next game
+      setState(() {
+        _currentGameIndex++;
+      });
+
+      // Navigate back to this screen to continue the tournament
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => UltimateTournamentGameScreen(
+            tourneyId: widget.tourneyId,
+            gameOrder: widget.gameOrder,
+            startingGameIndex: _currentGameIndex,  // Pass the updated index
+          ),
+          transitionDuration: const Duration(milliseconds: 500),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+        ),
+      );
+    } catch (e) {
+      print('🏆 Error in _onGameComplete: $e');
     }
   }
 
   Future<void> _savePlayerGameResult(Map<String, dynamic> result) async {
     try {
       final currentGame = widget.gameOrder[_currentGameIndex];
+
+      print('🏆 Saving result for game ${currentGame.name}');
+      print('🏆 Score: ${result['score']}, Rank: ${result['rank']}');
 
       await _db
           .collection('ultimate_tournaments')
@@ -275,9 +347,9 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
           .set({
         'playerId': _uid,
         'gameType': currentGame.name,
-        'score': result['score'],
-        'rank': result['rank'],
-        'details': result['details'],
+        'score': result['score'] ?? 0,
+        'rank': result['rank'] ?? 64,
+        'details': result['details'] ?? {},
         'isBot': false,
         'submittedAt': FieldValue.serverTimestamp(),
       });
@@ -285,8 +357,11 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
       // Update tournament progress
       await UltimateTournamentService.advanceToNextGame(widget.tourneyId);
 
+      print('🏆 Result saved successfully');
+
     } catch (e) {
       print('🏆 Error saving player game result: $e');
+      rethrow;
     }
   }
 
@@ -345,7 +420,11 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
       _playerCurrentRank = standings.indexWhere((player) => player['playerId'] == _uid) + 1;
       if (_playerCurrentRank == 0) _playerCurrentRank = 64; // If not found, assume last
 
-      _currentStandings = standings;
+      if (mounted) {
+        setState(() {
+          _currentStandings = standings;
+        });
+      }
 
       print('🏆 Current standings: Player rank $_playerCurrentRank out of ${standings.length}');
     } catch (e) {
@@ -355,6 +434,8 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
   }
 
   void _showIntermediateResults() {
+    if (!mounted) return;
+
     setState(() {
       _showingIntermediateResults = true;
     });
@@ -373,12 +454,18 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
   }
 
   void _showFinalResults() {
+    if (!mounted) return;
+
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (_) => UltimateTournamentResultsScreen(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => UltimateTournamentResultsScreen(
           tourneyId: widget.tourneyId,
         ),
+        transitionDuration: const Duration(milliseconds: 500),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
       ),
     );
   }
@@ -415,13 +502,13 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
                     colors: interpolatedColors,
                     center: Alignment.center,
                     radius: 2.0,
-                    stops: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                    stops: const [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
                   ),
                 ),
               ),
 
               if (_isLoading) _buildLoadingScreen(),
-              if (_showingIntermediateResults) _buildIntermediateResultsScreen(),
+              if (_showingIntermediateResults && !_isLoading) _buildIntermediateResultsScreen(),
               if (!_isLoading && !_showingIntermediateResults) _buildGameIntroScreen(),
             ],
           );
@@ -472,7 +559,7 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
           ),
           const SizedBox(height: 40),
           ShaderMask(
-            shaderCallback: (bounds) => LinearGradient(
+            shaderCallback: (bounds) => const LinearGradient(
               colors: [Colors.amber, Colors.orange, Colors.red],
             ).createShader(bounds),
             child: Text(

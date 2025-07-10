@@ -7,6 +7,7 @@ import 'lobby_screen.dart';
 import '../screens/tournament_setup_screen.dart';
 import '../main.dart' show targetDuration, psychedelicPalette, backgroundSwapDuration;
 import 'precision_tap_screen.dart';
+import 'game_selection_screen.dart';  // Add this import
 
 class DurationSelectScreen extends StatefulWidget {
   const DurationSelectScreen({super.key});
@@ -138,7 +139,14 @@ class _DurationSelectScreenState extends State<DurationSelectScreen>
                         ),
                         child: IconButton(
                           icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                          onPressed: () => Navigator.pop(context),
+                          onPressed: () {
+                            // Always go back to game selection screen
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(builder: (_) => const GameSelectionScreen()),
+                                  (route) => false,  // Remove all previous routes
+                            );
+                          },
                         ),
                       ),
                     ),
