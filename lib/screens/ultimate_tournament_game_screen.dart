@@ -167,93 +167,95 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
     // Submit bot results for this game
     _submitBotResultsForGame(currentGame);
 
-    // Add a small delay to ensure UI is ready
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (!mounted) return;
-
-      // Navigate to the appropriate game screen
-      switch (currentGame) {
-        case GameType.precision:
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) => _UltimatePrecisionWrapper(
-                tourneyId: widget.tourneyId,
-                onComplete: _onGameComplete,
-              ),
-              transitionDuration: const Duration(milliseconds: 300),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                return FadeTransition(opacity: animation, child: child);
-              },
+    // Navigate to the appropriate game screen with callback
+    switch (currentGame) {
+      case GameType.precision:
+        Navigator.push(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => PrecisionTapScreen(
+              target: targetDuration,
+              tourneyId: 'ultimate_${widget.tourneyId}',
+              round: 1,
+              onUltimateComplete: _onGameComplete,
             ),
-          );
-          break;
+            transitionDuration: const Duration(milliseconds: 300),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+          ),
+        );
+        break;
 
-        case GameType.momentum:
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) => _UltimateMomentumWrapper(
-                tourneyId: widget.tourneyId,
-                onComplete: _onGameComplete,
-              ),
-              transitionDuration: const Duration(milliseconds: 300),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                return FadeTransition(opacity: animation, child: child);
-              },
+      case GameType.momentum:
+        Navigator.push(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => MomentumGameScreen(
+              isPractice: false,
+              tourneyId: 'ultimate_${widget.tourneyId}',
+              onUltimateComplete: _onGameComplete,
             ),
-          );
-          break;
+            transitionDuration: const Duration(milliseconds: 300),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+          ),
+        );
+        break;
 
-        case GameType.memory:
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) => _UltimateMemoryWrapper(
-                tourneyId: widget.tourneyId,
-                onComplete: _onGameComplete,
-              ),
-              transitionDuration: const Duration(milliseconds: 300),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                return FadeTransition(opacity: animation, child: child);
-              },
+      case GameType.memory:
+        Navigator.push(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => MemoryGameScreen(
+              isPractice: false,
+              tourneyId: 'ultimate_${widget.tourneyId}',
+              onUltimateComplete: _onGameComplete,
             ),
-          );
-          break;
+            transitionDuration: const Duration(milliseconds: 300),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+          ),
+        );
+        break;
 
-        case GameType.match:
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) => _UltimateMatchWrapper(
-                tourneyId: widget.tourneyId,
-                onComplete: _onGameComplete,
-              ),
-              transitionDuration: const Duration(milliseconds: 300),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                return FadeTransition(opacity: animation, child: child);
-              },
+      case GameType.match:
+        Navigator.push(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => MatchGameScreen(
+              isPractice: false,
+              tourneyId: 'ultimate_${widget.tourneyId}',
+              onUltimateComplete: _onGameComplete,
             ),
-          );
-          break;
+            transitionDuration: const Duration(milliseconds: 300),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+          ),
+        );
+        break;
 
-        case GameType.maze:
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) => _UltimateMazeWrapper(
-                tourneyId: widget.tourneyId,
-                onComplete: _onGameComplete,
-              ),
-              transitionDuration: const Duration(milliseconds: 300),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                return FadeTransition(opacity: animation, child: child);
-              },
+      case GameType.maze:
+        Navigator.push(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => MazeGameScreen(
+              isPractice: false,
+              survivalId: 'ultimate_${widget.tourneyId}',
+              round: 1,
+              onUltimateComplete: _onGameComplete,
             ),
-          );
-          break;
-      }
-    });
+            transitionDuration: const Duration(milliseconds: 300),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+          ),
+        );
+        break;
+    }
   }
 
   Future<void> _submitBotResultsForGame(GameType gameType) async {
@@ -312,21 +314,30 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
         _currentGameIndex++;
       });
 
-      // Navigate back to this screen to continue the tournament
-      Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) => UltimateTournamentGameScreen(
-            tourneyId: widget.tourneyId,
-            gameOrder: widget.gameOrder,
-            startingGameIndex: _currentGameIndex,  // Pass the updated index
-          ),
-          transitionDuration: const Duration(milliseconds: 500),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-        ),
-      );
+      // Small delay to ensure clean transition
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      if (!mounted) return;
+
+      // Check if all games are completed
+      if (_currentGameIndex >= widget.gameOrder.length) {
+        _showFinalResults();
+      } else {
+        // Show intermediate results briefly
+        setState(() {
+          _showingIntermediateResults = true;
+        });
+
+        // After showing results, start next game
+        Timer(const Duration(seconds: 3), () {
+          if (mounted) {
+            setState(() {
+              _showingIntermediateResults = false;
+            });
+            _startCurrentGame();
+          }
+        });
+      }
     } catch (e) {
       print('🏆 Error in _onGameComplete: $e');
     }
@@ -881,129 +892,5 @@ class _UltimateTournamentGameScreenState extends State<UltimateTournamentGameScr
       case GameType.maze:
         return 'Navigate mazes from memory';
     }
-  }
-}
-
-// Wrapper classes for each game to handle Ultimate Tournament integration
-
-class _UltimatePrecisionWrapper extends StatefulWidget {
-  final String tourneyId;
-  final Function(Map<String, dynamic>) onComplete;
-
-  const _UltimatePrecisionWrapper({
-    required this.tourneyId,
-    required this.onComplete,
-  });
-
-  @override
-  State<_UltimatePrecisionWrapper> createState() => _UltimatePrecisionWrapperState();
-}
-
-class _UltimatePrecisionWrapperState extends State<_UltimatePrecisionWrapper> {
-  @override
-  Widget build(BuildContext context) {
-    return PrecisionTapScreen(
-      target: targetDuration,
-      tourneyId: 'ultimate_${widget.tourneyId}',
-      round: 1,
-      onUltimateComplete: widget.onComplete,
-    );
-  }
-}
-
-class _UltimateMomentumWrapper extends StatefulWidget {
-  final String tourneyId;
-  final Function(Map<String, dynamic>) onComplete;
-
-  const _UltimateMomentumWrapper({
-    required this.tourneyId,
-    required this.onComplete,
-  });
-
-  @override
-  State<_UltimateMomentumWrapper> createState() => _UltimateMomentumWrapperState();
-}
-
-class _UltimateMomentumWrapperState extends State<_UltimateMomentumWrapper> {
-  @override
-  Widget build(BuildContext context) {
-    return MomentumGameScreen(
-      isPractice: false,
-      tourneyId: 'ultimate_${widget.tourneyId}',
-      onUltimateComplete: widget.onComplete,
-    );
-  }
-}
-
-class _UltimateMemoryWrapper extends StatefulWidget {
-  final String tourneyId;
-  final Function(Map<String, dynamic>) onComplete;
-
-  const _UltimateMemoryWrapper({
-    required this.tourneyId,
-    required this.onComplete,
-  });
-
-  @override
-  State<_UltimateMemoryWrapper> createState() => _UltimateMemoryWrapperState();
-}
-
-class _UltimateMemoryWrapperState extends State<_UltimateMemoryWrapper> {
-  @override
-  Widget build(BuildContext context) {
-    return MemoryGameScreen(
-      isPractice: false,
-      tourneyId: 'ultimate_${widget.tourneyId}',
-      onUltimateComplete: widget.onComplete,
-    );
-  }
-}
-
-class _UltimateMatchWrapper extends StatefulWidget {
-  final String tourneyId;
-  final Function(Map<String, dynamic>) onComplete;
-
-  const _UltimateMatchWrapper({
-    required this.tourneyId,
-    required this.onComplete,
-  });
-
-  @override
-  State<_UltimateMatchWrapper> createState() => _UltimateMatchWrapperState();
-}
-
-class _UltimateMatchWrapperState extends State<_UltimateMatchWrapper> {
-  @override
-  Widget build(BuildContext context) {
-    return MatchGameScreen(
-      isPractice: false,
-      tourneyId: 'ultimate_${widget.tourneyId}',
-      onUltimateComplete: widget.onComplete,
-    );
-  }
-}
-
-class _UltimateMazeWrapper extends StatefulWidget {
-  final String tourneyId;
-  final Function(Map<String, dynamic>) onComplete;
-
-  const _UltimateMazeWrapper({
-    required this.tourneyId,
-    required this.onComplete,
-  });
-
-  @override
-  State<_UltimateMazeWrapper> createState() => _UltimateMazeWrapperState();
-}
-
-class _UltimateMazeWrapperState extends State<_UltimateMazeWrapper> {
-  @override
-  Widget build(BuildContext context) {
-    return MazeGameScreen(
-      isPractice: false,
-      survivalId: 'ultimate_${widget.tourneyId}',
-      round: 1,
-      onUltimateComplete: widget.onComplete,
-    );
   }
 }

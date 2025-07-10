@@ -347,13 +347,13 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
           'Rank: #$rank';
     });
 
-    // FIXED: Ensure we call the completion callback
-    Timer(const Duration(seconds: 2), () {
-      if (widget.onUltimateComplete != null) {
-        print('🏆 Calling onUltimateComplete with result: $result');
+    // CHANGED: Use post frame callback instead of Timer
+    if (widget.onUltimateComplete != null && mounted) {
+      print('🏆 Calling onUltimateComplete with result: $result');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         widget.onUltimateComplete!(result);
-      }
-    });
+      });
+    }
   }
 
   Future<void> _submitBotResultsForRound() async {

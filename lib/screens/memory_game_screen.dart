@@ -255,7 +255,10 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
       },
     };
 
-    widget.onUltimateComplete!(result);
+    // CHANGED: Use post frame callback for clean transition
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onUltimateComplete!(result);
+    });
   }
 
   List<Color> _generateGradient() {

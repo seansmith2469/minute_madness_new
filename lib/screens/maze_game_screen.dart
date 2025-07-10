@@ -59,6 +59,7 @@ class _MazeGameScreenState extends State<MazeGameScreen>
   GamePhase _currentPhase = GamePhase.study;
   int _currentRound = 1;
   bool _hasSubmitted = false;
+  bool _gameComplete = false;
 
   // Timing
   late Timer _phaseTimer;
@@ -195,7 +196,11 @@ class _MazeGameScreenState extends State<MazeGameScreen>
   }
 
   void _endUltimateTournament() {
-    if (widget.onUltimateComplete == null) return;
+    if (_gameComplete || widget.onUltimateComplete == null) return;
+
+    setState(() {
+      _gameComplete = true;
+    });
 
     final totalTime = 60 - _ultimateTimeLeft;
     final timeBonus = math.max(0, _ultimateTimeLeft * 5); // 5 points per second remaining
@@ -220,7 +225,10 @@ class _MazeGameScreenState extends State<MazeGameScreen>
       },
     };
 
-    widget.onUltimateComplete!(result);
+    // CHANGED: Use post frame callback for clean transition
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onUltimateComplete!(result);
+    });
   }
 
   List<Color> _generateGradient() {

@@ -388,7 +388,10 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
         },
       };
 
-      widget.onUltimateComplete!(result);
+      // CHANGED: Use post frame callback for clean transition
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onUltimateComplete!(result);
+      });
       return; // Don't navigate, let Ultimate Tournament handle it
     }
 

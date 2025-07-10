@@ -370,8 +370,7 @@ class _MatchGameScreenState extends State<MatchGameScreen>
     if (_hasSubmitted || _gameComplete) return;
 
     final endTime = DateTime.now();
-    final rawTime = endTime.difference(_gameStartTime!).inMilliseconds;
-    _completionTimeMs = rawTime + (_penaltySeconds * 1000); // Add penalty time
+    _completionTimeMs = endTime.difference(_gameStartTime!).inMilliseconds;
 
     setState(() {
       _gameComplete = true;
@@ -396,7 +395,10 @@ class _MatchGameScreenState extends State<MatchGameScreen>
         },
       };
 
-      widget.onUltimateComplete!(result);
+      // CHANGED: Use post frame callback for clean transition
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onUltimateComplete!(result);
+      });
       return; // Don't navigate, let Ultimate Tournament handle it
     }
 
