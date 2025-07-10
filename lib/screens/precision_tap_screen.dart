@@ -3,9 +3,9 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../models/match_result.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/match_result.dart';
 import '../main.dart' show gif3s, targetDurations;
 import '../config/gradient_config.dart';
 import '../services/bot_service.dart';
@@ -82,8 +82,6 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
   // ADDED: Ready screen states
   bool _showReadyScreen = true;
   bool _hasClickedReady = false;
-
-// Replace the initState() method in your precision_tap_screen.dart with this:
 
   @override
   void initState() {
@@ -349,8 +347,12 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
           'Rank: #$rank';
     });
 
+    // FIXED: Ensure we call the completion callback
     Timer(const Duration(seconds: 2), () {
-      widget.onUltimateComplete!(result);
+      if (widget.onUltimateComplete != null) {
+        print('🏆 Calling onUltimateComplete with result: $result');
+        widget.onUltimateComplete!(result);
+      }
     });
   }
 
@@ -485,7 +487,7 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
       // Add this round's error
       _roundErrors.add(error.inMilliseconds.abs());
 
-      if (_currentRound < 3 && !_gameComplete) {
+      if (_currentRound < 3 && !_gameComplete && _ultimateTimeLeft > 0) {
         // Move to next round
         setState(() {
           _currentRound++;
@@ -625,15 +627,16 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
 
   @override
   Widget build(BuildContext context) {
-      print('🔴 PRECISION TAP BUILD');
-      print('🔴 showReadyScreen: $_showReadyScreen');
-      print('🔴 hasClickedReady: $_hasClickedReady');
-      print('🔴 isPracticeMode: $_isPracticeMode');
-      print('🔴 isUltimateTournament: $_isUltimateTournament');
-      print('🔴 showButton: $_showButton');
-      print('🔴 showInstructions: $_showInstructions');
-      print('🔴 timedOut: $_timedOut');
-      print('🔴 gameComplete: $_gameComplete');
+    print('🔴 PRECISION TAP BUILD');
+    print('🔴 showReadyScreen: $_showReadyScreen');
+    print('🔴 hasClickedReady: $_hasClickedReady');
+    print('🔴 isPracticeMode: $_isPracticeMode');
+    print('🔴 isUltimateTournament: $_isUltimateTournament');
+    print('🔴 showButton: $_showButton');
+    print('🔴 showInstructions: $_showInstructions');
+    print('🔴 timedOut: $_timedOut');
+    print('🔴 gameComplete: $_gameComplete');
+
     return Scaffold(
       body: AnimatedBuilder(
         animation: _backgroundController,
@@ -666,17 +669,9 @@ class _PrecisionTapScreenState extends State<PrecisionTapScreen>
                 builder: (context, child) {
                   return Container(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.transparent,
-                          interpolatedColors[1].withOpacity(0.2), // Reduced from 0.6
-                          Colors.transparent,
-                          interpolatedColors[3].withOpacity(0.15), // Reduced from 0.4
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        transform: GradientRotation(_rotationController.value * 6.28),
+                      gradient: PsychedelicGradient.getOverlayGradient(
+                        interpolatedColors,
+                        _rotationController.value * 6.28,
                       ),
                     ),
                   );

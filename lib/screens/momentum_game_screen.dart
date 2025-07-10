@@ -55,6 +55,9 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
   bool _showResult = false;
   int _lastSpinScore = 0;
 
+  // Check if ultimate tournament
+  bool get _isUltimateTournament => widget.onUltimateComplete != null;
+
   // ENHANCED ANIMATIONS
   late AnimationController _backgroundController;
   late AnimationController _pulsController;
@@ -389,7 +392,7 @@ class _MomentumGameScreenState extends State<MomentumGameScreen>
       return; // Don't navigate, let Ultimate Tournament handle it
     }
 
-    if (!widget.isPractice) {
+    if (!widget.isPractice && !_isUltimateTournament) {
       _submitResult(totalScore);
     }
 

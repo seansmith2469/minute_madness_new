@@ -115,9 +115,11 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800), // SUPER FAST for intensity
     )..addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        _currentColors = List.from(_nextColors);
-        _nextColors = _generateGradient();
+      if (status == AnimationStatus.completed && mounted) {
+        setState(() {
+          _currentColors = List.from(_nextColors);
+          _nextColors = _generateGradient();
+        });
         _backgroundController.forward(from: 0);
       }
     })..forward();
@@ -170,8 +172,8 @@ class _MemoryGameScreenState extends State<MemoryGameScreen>
       _startUltimateTimer();
     }
 
-    // Submit bot results for tournament mode
-    if (!widget.isPractice) {
+    // Submit bot results for tournament mode (not for ultimate)
+    if (!widget.isPractice && !_isUltimateTournament) {
       _submitBotResults();
     }
 
